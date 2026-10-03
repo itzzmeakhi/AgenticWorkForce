@@ -23,6 +23,8 @@ const nextId = () => {
   return `m-${idCounter}-${Date.now()}`;
 }
 
+const AUTH_GATE_ENABLED = false;
+
 const WELCOME_MESSAGE =
   "Hi, I'm Intellia. Ask me anything about e-commerce or insurance — refund policies, shipping, " +
   'claims, coverage, you name it.';
@@ -45,7 +47,7 @@ const ChatPage = () => {
 
   const handleSend = useCallback(
     async (text, opts = {}) => {
-      if (!opts.skipAuthGate && !user) {
+      if (AUTH_GATE_ENABLED && !opts.skipAuthGate && !user) {
         const gate = checkAuthGate(text);
         if (gate.requiresAuth) {
           pendingQuestionRef.current = text;

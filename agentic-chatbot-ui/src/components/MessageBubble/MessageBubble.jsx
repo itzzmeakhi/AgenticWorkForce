@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 
 import ToolTrace from '../ToolTrace/ToolTrace';
 import DomainBadge from '../DomainBadge/DomainBadge';
+import MarkdownLite from '../../utils/renderMarkdownLite';
 
 import './MessageBubble.scss';
 
@@ -13,7 +14,7 @@ const MessageBubble = ({ role, text, domain, toolCalls, isError, authPrompt, onO
     <div className={`message-row ${isUser ? 'from-user' : 'from-bot'}`}>
       {!isUser && <ToolTrace toolCalls={toolCalls} />}
       <div className={`bubble ${isUser ? 'bubble-user' : 'bubble-bot'} ${isError ? 'bubble-error' : ''}`}>
-        {text}
+        {isUser ? text : <MarkdownLite text={text} />}
         {authPrompt && (
           <button
             type="button"
