@@ -1,0 +1,113 @@
+@use '../../styles/tokens' as *;
+@use '../../styles/mixins' as *;
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $space-7;
+  padding: $space-7 $space-8;
+  border-bottom: 1px solid var(--panel-border);
+  flex-wrap: wrap;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: $space-5;
+
+  .header-icon {
+    font-size: $font-2xl;
+    line-height: 1;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: $font-lg;
+  }
+
+  p {
+    margin: $space-1 0 0;
+    color: var(--text-dim);
+    font-size: $font-sm-plus;
+  }
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: $space-5;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.status-dot {
+  @include dot(9px);
+
+  &.status-online {
+    background: var(--success);
+    box-shadow: 0 0 6px var(--success);
+  }
+
+  &.status-offline {
+    background: var(--error);
+  }
+
+  &.status-checking {
+    background: var(--text-dimmer);
+  }
+}
+
+.user-badge {
+  display: flex;
+  align-items: baseline;
+  gap: $space-2;
+  padding: $space-2 $space-5;
+  border-radius: $radius-sm;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  font-size: $font-sm-plus;
+  white-space: nowrap;
+
+  .user-badge-name {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .user-badge-type {
+    color: var(--text-dimmer);
+    text-transform: capitalize;
+  }
+
+  &.user-badge-guest {
+    color: var(--text-dimmer);
+    font-style: italic;
+  }
+}
+
+.reset-btn,
+.capabilities-btn,
+.signout-btn,
+.signin-btn {
+  @include outline-chip;
+}
+
+.signout-btn {
+  border-color: var(--error);
+  color: #fecaca;
+
+  &:hover:not(:disabled) {
+    border-color: var(--error);
+    color: white;
+  }
+}
+
+.signin-btn {
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+
+  &:hover:not(:disabled) {
+    background: var(--accent);
+  }
+}

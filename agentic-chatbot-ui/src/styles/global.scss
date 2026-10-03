@@ -1,0 +1,37 @@
+@use 'tokens' as *;
+
+:root {
+  color-scheme: dark;
+  --page-bg: #16213a;
+  --bg: #16213a;
+  --panel: #16213a;
+  --panel-border: #24334f;
+  --input-bg: #0f1626;
+  --text: #e8ecf3;
+  --text-dim: #8fa2c3;
+  --text-dimmer: #6f84ab;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --success: #22c55e;
+  --error: #ef4444;
+  --trace-bg: #0f1c17;
+  --trace-border: #1c3b2e;
+  --trace-text: #56d4a4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: $font-body;
+  background: var(--page-bg);
+  color: var(--text);
+}

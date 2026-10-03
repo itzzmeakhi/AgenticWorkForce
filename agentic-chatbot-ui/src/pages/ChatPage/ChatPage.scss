@@ -1,0 +1,22 @@
+@use '../../styles/tokens' as *;
+
+// The chat sits as a centered, bounded card -- narrower than the viewport
+// and shorter than 100vh, with the page backdrop (body, see
+// styles/global.scss) showing around all four sides -- the same "floating
+// card" feel as the login card (see pages/LoginPage/LoginPage.scss's
+// .auth-card) rather than a panel that stretches edge-to-edge. On a short
+// or narrow viewport it still comfortably fills the available space.
+.chat-page {
+  height: 90vh;
+  max-height: 820px;
+  width: 100%;
+  max-width: $chat-max-width;
+  margin: 5vh auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--panel-border);
+  border-radius: $radius-xl;
+  overflow: hidden;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.3);
+}

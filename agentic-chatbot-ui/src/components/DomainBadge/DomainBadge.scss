@@ -1,0 +1,17 @@
+@use '../../styles/tokens' as *;
+@use '../../styles/mixins' as *;
+
+.domain-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-2;
+  font-size: $font-xs;
+  color: var(--text-dimmer);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.domain-dot {
+  @include dot(7px);
+  background: var(--badge-color);
+}

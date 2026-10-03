@@ -1,0 +1,66 @@
+@use '../../styles/tokens' as *;
+
+.message-row {
+  display: flex;
+  flex-direction: column;
+  max-width: 72%;
+  gap: $space-2;
+
+  &.from-user {
+    align-self: flex-end;
+    align-items: flex-end;
+  }
+
+  &.from-bot {
+    align-self: flex-start;
+    align-items: flex-start;
+  }
+}
+
+.bubble {
+  padding: $space-4 $space-6;
+  border-radius: $radius-lg;
+  line-height: 1.45;
+  font-size: $font-base;
+  white-space: pre-wrap;
+  word-break: break-word;
+
+  &.bubble-user {
+    background: var(--accent);
+    color: white;
+    border-bottom-right-radius: $space-1;
+  }
+
+  &.bubble-bot {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-bottom-left-radius: $space-1;
+  }
+
+  &.bubble-error {
+    border-color: var(--error);
+    color: #fecaca;
+  }
+}
+
+.auth-prompt-btn {
+  display: block;
+  margin-top: $space-4;
+  padding: $space-3 $space-6;
+  border-radius: $radius-md;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
+  font-size: $font-sm-plus;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: var(--accent);
+  }
+}
+
+.bubble-meta {
+  padding: 0 2px;
+}

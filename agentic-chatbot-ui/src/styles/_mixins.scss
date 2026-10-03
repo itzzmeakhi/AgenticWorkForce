@@ -1,0 +1,84 @@
+@use 'sass:math';
+@use 'tokens' as *;
+
+@mixin button-reset {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+@mixin outline-chip {
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  color: var(--text-dim);
+  padding: $space-2 $space-5;
+  border-radius: $radius-sm;
+  font-size: $font-sm-plus;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+
+  &:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+@mixin dot($size: 8px) {
+  width: $size;
+  height: $size;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+@mixin custom-scrollbar {
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--panel-border);
+    border-radius: math.div($radius-sm, 2);
+  }
+}
+
+@mixin field-input {
+  padding: $space-5 $space-6;
+  border-radius: $radius-md;
+  border: 1px solid var(--panel-border);
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: $font-base;
+  font-family: inherit;
+
+  &:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+}
+
+@mixin primary-button {
+  padding: $space-5 $space-9;
+  border-radius: $radius-md;
+  border: none;
+  background: var(--accent);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: $font-base;
+  transition: background 0.15s;
+
+  &:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}

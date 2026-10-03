@@ -1,0 +1,26 @@
+@use '../../styles/tokens' as *;
+
+.tool-trace {
+  font-size: 11.5px;
+  color: var(--trace-text);
+  background: var(--trace-bg);
+  border: 1px solid var(--trace-border);
+  padding: $space-3 $space-4;
+  border-radius: $radius-sm;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: $space-1;
+}
+
+.tool-trace-line {
+  display: flex;
+  gap: $space-2;
+  align-items: baseline;
+
+  code {
+    font-family: $font-mono;
+    font-size: $font-xs;
+    word-break: break-all;
+  }
+}

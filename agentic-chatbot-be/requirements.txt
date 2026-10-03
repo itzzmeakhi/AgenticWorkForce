@@ -1,0 +1,29 @@
+# API framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.6
+pydantic>=2.11.9
+python-dotenv>=1.1.1
+httpx>=0.28.1
+
+# LangChain / LangGraph orchestration
+# Bumped from the 0.3.x/0.6.x line to the current 1.x line -- required for
+# Gemini 3.x's thought_signature support in langchain-google-genai>=3.0.0,
+# which itself requires langchain-core>=1.0. Verified: full test suite
+# (39/39) passes unmodified under these versions, and ChatGoogleGenerativeAI
+# constructs cleanly with model="gemini-3.6-flash".
+langchain==1.4.2
+langchain-core==1.6.3
+langgraph==1.2.11
+langgraph-checkpoint==4.2.0
+
+# LLM providers (Gemini is the dissertation's primary model; OpenAI/Anthropic
+# are pluggable alternatives, all optional if LLM_PROVIDER=mock)
+langchain-google-genai==4.4.0
+langchain-openai==1.6.2
+langchain-anthropic==1.7.2
+
+# Vector database: ChromaDB (offline/dev only in this build)
+chromadb>=0.5.5
+
+# Testing
+pytest>=8.3.3

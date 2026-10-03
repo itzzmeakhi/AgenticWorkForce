@@ -1,0 +1,159 @@
+@use '../../styles/tokens' as *;
+@use '../../styles/mixins' as *;
+
+.auth-shell {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $space-8;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: $radius-xl;
+  padding: 28px $space-9;
+}
+
+.auth-header {
+  display: flex;
+  align-items: center;
+  gap: $space-5;
+  margin-bottom: $space-8;
+
+  .auth-icon {
+    font-size: $font-2xl;
+    line-height: 1;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: $font-lg;
+  }
+
+  p {
+    margin: $space-1 0 0;
+    color: var(--text-dim);
+    font-size: $font-sm-plus;
+  }
+}
+
+.auth-pending-hint {
+  font-size: $font-sm-plus;
+  color: var(--text-dim);
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: $radius-sm;
+  padding: $space-4 $space-5;
+  margin: 0 0 $space-7;
+  line-height: 1.5;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: $space-7;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+
+  label {
+    font-size: $font-sm-plus;
+    color: var(--text-dim);
+  }
+
+  input {
+    @include field-input;
+  }
+
+  .auth-hint {
+    font-size: $font-xs;
+    color: var(--text-dimmer);
+  }
+}
+
+.auth-account-type {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+
+  legend {
+    font-size: $font-sm-plus;
+    color: var(--text-dim);
+    padding: 0;
+    margin-bottom: $space-1;
+  }
+}
+
+.auth-account-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $space-3;
+
+  @media (max-width: $breakpoint-sm) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.auth-account-option {
+  position: relative;
+
+  input {
+    position: absolute;
+    opacity: 0;
+    inset: 0;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  span {
+    display: block;
+    text-align: center;
+    padding: $space-4 $space-3;
+    border-radius: $radius-md;
+    border: 1px solid var(--panel-border);
+    background: var(--input-bg);
+    color: var(--text-dim);
+    font-size: $font-sm-plus;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+  }
+
+  input:checked + span {
+    border-color: var(--accent);
+    color: var(--text);
+    background: rgba(37, 99, 235, 0.12);
+  }
+
+  input:focus-visible + span {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.auth-error {
+  font-size: $font-sm-plus;
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid var(--error);
+  border-radius: $radius-sm;
+  padding: $space-3 $space-4;
+}
+
+.auth-submit {
+  @include primary-button;
+  width: 100%;
+}
+
+.auth-disclaimer {
+  margin: $space-7 0 0;
+  font-size: $font-xs;
+  color: var(--text-dimmer);
+  line-height: 1.5;
+  text-align: center;
+}
