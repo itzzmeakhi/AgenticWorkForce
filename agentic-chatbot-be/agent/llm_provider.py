@@ -11,11 +11,6 @@ load_dotenv()
 
 
 class MockChatModel(BaseChatModel):
-    """Zero-dependency stand-in LLM: ordered keyword-matching candidates
-    decide whether to call a tool or answer directly, so the full pipeline
-    (LangGraph loop, real tool execution, real knowledge retrieval) runs
-    end to end with no API key at all."""
-
     tools_bound: list = []
     domain_hint: str = "general"
 

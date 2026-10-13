@@ -7,7 +7,7 @@ from agent.contact_center_agent import CallCenterAgent
 from agent.fulfillment_client import check_fulfillment_api_health
 from api.schemas import ChatRequest, ChatResponse, HealthResponse, ReindexResponse
 
-app = FastAPI(title="Contact Center Agent API (midsem build)", version="0.6.0")
+app = FastAPI(title="Contact Center Agent API", version="0.6.0")
 
 app.add_middleware(
     CORSMiddleware,

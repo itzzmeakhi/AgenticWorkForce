@@ -17,10 +17,7 @@ from agent.system_prompt_config import get_system_prompt
 
 logger = logging.getLogger(__name__)
 
-# Real insurance operations aren't wired up in this milestone -- see
-# fulfillment_api/operations.py's insurance_status_wip() and README
-# "What's WIP". Passed into get_system_prompt() so the agent is instructed
-# to use the honest WIP tool rather than guess at policy/claim data.
+# Real insurance operations aren't developed yet
 INSURANCE_AVAILABLE = False
 
 
@@ -40,8 +37,7 @@ def _domain_tools(domain: str, fulfillment_available: bool):
 
 class CallCenterAgent:
     """LangGraph-based contact center agent with offline knowledge search
-    and e-commerce fulfillment tool integration. Same public shape as the
-    full build: construct once, then call .chat(message)."""
+    and e-commerce fulfillment tool integration."""
 
     def __init__(self):
         self.llm = get_llm()
@@ -63,7 +59,7 @@ class CallCenterAgent:
 
         self.graph = self._create_graph()
         self.app = self.graph.compile()
-        logger.info("Contact Center Agent initialized (midsem build)")
+        logger.info("Contact Center Agent initialized")
 
     def _create_graph(self) -> StateGraph:
         def agent_node(state: AgentState) -> Dict[str, Any]:
@@ -152,13 +148,6 @@ class CallCenterAgent:
         pending = {}
         for m in result["messages"]:
             if isinstance(m, AIMessage) and m.text:
-                # langchain-core >=1.0 can represent AIMessage.content as a
-                # list of typed blocks (text/reasoning/tool_call/...) instead
-                # of a plain string -- e.g. Gemini 3's thinking output comes
-                # back this way. `.text` is the library's own accessor that
-                # normalizes either shape (str, or list-of-blocks) down to
-                # the concatenated text content as a real `str`, which is
-                # what ChatResponse.reply (a Pydantic str field) requires.
                 final_reply = m.text
             if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
                 for tc in m.tool_calls:

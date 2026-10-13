@@ -2,7 +2,7 @@
 
 ## Refund eligibility
 Orders that have not yet shipped can be cancelled for a full refund. Once an order has
-shipped, customers may initiate a return within 14 days of delivery for a full refund,
+shipped, customers may initiate a return within 24 days of delivery for a full refund,
 provided the item is unused and in its original packaging.
 
 ## Refund timeline
