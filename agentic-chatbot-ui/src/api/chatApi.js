@@ -3,7 +3,22 @@
  * Same-origin relative paths work both in dev (via the Vite proxy in
  * vite.config.js) and in production (FastAPI serves the built app itself).
  */
+import { getStoredToken } from '../auth/authStorage'
+
 const SESSION_STORAGE_KEY = 'dw_session_id'
+
+/** JSON request headers, plus the signed-in customer's token when there is one. */
+function jsonHeaders() {
+  const token = getStoredToken()
+  return token ? { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } : { 'Content-Type': 'application/json' }
+}
+
+/** Error carrying the HTTP status, so callers can react to 401 (expired sign-in). */
+function httpError(message, status) {
+  const err = new Error(message)
+  err.status = status
+  return err
+}
 
 export function getStoredSessionId() {
   try {
@@ -74,13 +89,13 @@ export function clearStoredMessages() {
 export async function sendChatMessage(message, sessionId) {
   const res = await fetch('/chat', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({ message, session_id: sessionId || undefined }),
   })
 
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    throw new Error(`Chat request failed (${res.status}): ${text || res.statusText}`)
+    throw httpError(`Chat request failed (${res.status}): ${text || res.statusText}`, res.status)
   }
 
   return res.json()
@@ -95,13 +110,13 @@ export async function sendChatMessage(message, sessionId) {
 export async function streamChatMessage(message, sessionId, onToken) {
   const res = await fetch('/chat/stream', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({ message, session_id: sessionId || undefined }),
   })
   if (res.status === 404 || res.status === 405) return sendChatMessage(message, sessionId)
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => '')
-    throw new Error(`Chat request failed (${res.status}): ${text || res.statusText}`)
+    throw httpError(`Chat request failed (${res.status}): ${text || res.statusText}`, res.status)
   }
 
   const reader = res.body.getReader()

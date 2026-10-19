@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
-import { fakeAuthenticate } from '../../api/authApi';
+import { login as signIn } from '../../api/authApi';
 import { useAuth } from '../../context/AuthContext';
 
 import './LoginPage.scss';
@@ -10,6 +10,7 @@ const ACCOUNT_TYPE_OPTIONS = [
   { value: 'ecommerce', label: 'E-commerce' },
   { value: 'insurance', label: 'Insurance' }
 ];
+const REDIRECT_SECONDS = 3;
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -24,12 +25,13 @@ const LoginPage = () => {
       ? domainParam
       : 'ecommerce';
 
-  const [customerEmail, setCustomerEmail] = useState(returnId);
+  const [customerEmail, setCustomerEmail] = useState(returnId.includes('@') ? returnId : '');
   const [password, setPassword] = useState('');
   const [accountType, setAccountType] = useState(initialAccountType);
   const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [signedInSession, setSignedInSession] = useState(null);
+  const [secondsLeft, setSecondsLeft] = useState(REDIRECT_SECONDS);
 
   const hasOpener = typeof window !== 'undefined' && !!window.opener && window.opener !== window;
 
@@ -39,19 +41,17 @@ const LoginPage = () => {
     setIsSubmitting(true);
 
     try {
-      const session = await fakeAuthenticate(customerEmail, password, accountType);
-      login(session.user);
+      const session = await signIn(accountType, customerEmail, password);
+      login(session);
 
       if (hasOpener) {
         try {
           window.opener.postMessage({ type: 'dw-auth-success', session }, window.location.origin);
         } catch {
-          // TODO: handle the error
+          // The chat tab could not be notified; the success screen still explains what happened.
         }
-        setSignedInSession(session);
-      } else {
-        navigate('/', { replace: true });
       }
+      setSignedInSession(session);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-in failed. Please try again.');
     } finally {
@@ -59,20 +59,37 @@ const LoginPage = () => {
     }
   }
 
+  // After a successful sign-in, count down and then leave: close the pop-up the chat
+  // opened (the chat tab already has the session), or go to the chat if opened directly.
+  useEffect(() => {
+    if (!signedInSession) return undefined;
+    if (secondsLeft <= 0) {
+      if (hasOpener) window.close();
+      navigate('/', { replace: true }); // fallback when the browser refuses window.close()
+      return undefined;
+    }
+    const timer = setTimeout(() => setSecondsLeft((n) => n - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [signedInSession, secondsLeft, hasOpener, navigate]);
+
   if (signedInSession) {
     return (
       <div className="auth-shell">
-        <div className="auth-card">
-          <div className="auth-header">
-            <span className="auth-icon">✅</span>
-            <div>
-              <h1>Signed in as {signedInSession.user.name}</h1>
-              <p>Your chat tab has been notified — you can close this tab now.</p>
-            </div>
+        <div className="auth-card auth-success" role="status" aria-live="polite">
+          <div className="auth-success-icon" aria-hidden="true">
+            <svg viewBox="0 0 52 52" width="64" height="64">
+              <circle className="auth-success-circle" cx="26" cy="26" r="24" fill="none" strokeWidth="3" />
+              <path className="auth-success-check" fill="none" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" d="M15 27l8 8 15-17" />
+            </svg>
           </div>
-          <button type="button" className="auth-submit" onClick={() => window.close()}>
-            Close this tab
-          </button>
+          <h1>Signed in successfully</h1>
+          <p className="auth-success-name">Welcome, {signedInSession.user.name}</p>
+          <p className="auth-success-timer">
+            {hasOpener ? 'Returning you to the chat' : 'Taking you to the chat'} in {Math.max(secondsLeft, 0)}…
+          </p>
+          <div className="auth-success-bar" aria-hidden="true">
+            <div className="auth-success-bar-fill" style={{ animationDuration: `${REDIRECT_SECONDS}s` }} />
+          </div>
         </div>
       </div>
     )
@@ -103,7 +120,7 @@ const LoginPage = () => {
               type="text"
               value={customerEmail}
               onChange={(e) => setCustomerEmail(e.target.value)}
-              placeholder="e.g. john.doe@example.com"
+              placeholder="you@example.com"
               autoComplete="off"
               autoFocus
             />
@@ -116,7 +133,7 @@ const LoginPage = () => {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="anything 6+ characters"
+              placeholder="Your password"
               autoComplete="current-password"
             />
           </div>
@@ -139,7 +156,7 @@ const LoginPage = () => {
             </div>
           </fieldset>
 
-          {error && <div className="auth-error">{error}</div>}
+          {error && <div className="auth-error" role="alert">{error}</div>}
 
           <button type="submit" className="auth-submit" disabled={isSubmitting}>
             {isSubmitting ? 'Signing in…' : 'Sign in'}

@@ -30,7 +30,7 @@ const nextId = () => {
   return `m-${idCounter}-${Date.now()}`;
 }
 
-const AUTH_GATE_ENABLED = false;
+const AUTH_GATE_ENABLED = true;
 
 // Only the first ~400 characters of a reply are read aloud (matches the backend's voice cap).
 const MAX_SPOKEN_CHARS = 400;
@@ -83,9 +83,9 @@ const ChatPage = () => {
 
   const handleSend = useCallback(
     async (text, opts = {}) => {
-      if (AUTH_GATE_ENABLED && !opts.skipAuthGate && !user) {
+      if (AUTH_GATE_ENABLED && !opts.skipAuthGate) {
         const gate = checkAuthGate(text);
-        if (gate.requiresAuth) {
+        if (gate.requiresAuth && !user) {
           pendingQuestionRef.current = text;
           setMessages((prev) => [
             ...prev,
@@ -96,6 +96,17 @@ const ChatPage = () => {
               text: "That needs your account details — I can't show another customer's order or policy info. Sign in and I'll pick up right where this left off.",
               authPrompt: { pendingText: text, id: gate.id, domain: gate.domain },
             },
+          ])
+          return;
+        }
+        if (gate.requiresAuth && user && gate.domain && gate.domain !== user.accountType) {
+          const wrongAccount =
+            `That's an ${gate.domain} question, but you're signed in to your ${user.accountType} account. ` +
+            `Sign out and sign in to ${gate.domain} to continue.`;
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), role: 'user', text },
+            { id: nextId(), role: 'bot', text: wrongAccount },
           ])
           return;
         }
@@ -168,9 +179,25 @@ const ChatPage = () => {
           }
         }
       } catch (err) {
-        setBackendStatus('offline');
         stopSpeaking();
         if (startedStreaming) setMessages((prev) => prev.filter((m) => m.id !== botId));
+        if (err && err.status === 401) {
+          // The token expired (or was rejected): drop it and ask for a fresh sign-in.
+          const domain = user ? user.accountType : undefined;
+          logout();
+          pendingQuestionRef.current = text;
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nextId(),
+              role: 'bot',
+              text: 'Your session has expired. Please sign in again and I will carry on with your question.',
+              authPrompt: { pendingText: text, domain },
+            },
+          ])
+          return;
+        }
+        setBackendStatus('offline');
         const message = err instanceof Error ? err.message : String(err);
         setMessages((prev) => [
           ...prev,
@@ -186,7 +213,7 @@ const ChatPage = () => {
         setIsStreaming(false);
       }
     },
-    [sessionId, user, voice.enabled, speakReplies, stopSpeaking]
+    [sessionId, user, logout, voice.enabled, speakReplies, stopSpeaking]
   )
 
   // Listens for the login tab's postMessage (see pages/LoginPage). Runs
@@ -198,7 +225,7 @@ const ChatPage = () => {
       if (!event.data || event.data.type !== 'dw-auth-success') return;
 
       const session = event.data.session;
-      login(session.user); // saves to this tab's sessionStorage too
+      login(session); // { token, user } -- saved to this tab's sessionStorage too
 
       setMessages((prev) => [
         ...prev,
@@ -208,10 +235,7 @@ const ChatPage = () => {
       const pending = pendingQuestionRef.current;
       pendingQuestionRef.current = null;
       if (pending) {
-        const augmented = /\b(ORD|POL|CLM)\d+/i.test(pending)
-          ? pending
-          : `${pending} (my customer/policy ID is ${session.user.customerId})`;
-        void handleSend(augmented, { skipAuthGate: true });
+        void handleSend(pending, { skipAuthGate: true });
       }
     }
 
@@ -256,7 +280,8 @@ const ChatPage = () => {
 
   const handleSignOut = useCallback(() => {
     logout();
-  }, [logout])
+    handleReset(); // the transcript may hold the customer's account details
+  }, [logout, handleReset])
 
   return (
     <div className="chat-page">

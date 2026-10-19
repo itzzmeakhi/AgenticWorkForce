@@ -14,6 +14,7 @@ export default defineConfig({
       '/health': 'http://localhost:8000',
       '/admin': 'http://localhost:8000',
       '/voice': 'http://localhost:8000',
+      '/auth': 'http://localhost:8000',
     },
   },
   build: {
