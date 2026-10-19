@@ -8,12 +8,19 @@ import CapabilitiesPanel from '../../components/CapabilitiesPanel/CapabilitiesPa
 import { useAuth } from '../../context/AuthContext';
 import { checkAuthGate } from '../../utils/authGate';
 import {
-  sendChatMessage,
+  streamChatMessage,
   checkHealth,
   getStoredSessionId,
   storeSessionId,
   clearStoredSessionId,
+  getStoredMessages,
+  storeMessages,
+  clearStoredMessages,
 } from '../../api/chatApi';
+
+import { getVoiceStatus, fetchSpeech } from '../../api/voiceApi';
+import SpeechQueue from '../../utils/speechQueue';
+import { takeSentences } from '../../utils/sentences';
 
 import './ChatPage.scss';
 
@@ -25,19 +32,48 @@ const nextId = () => {
 
 const AUTH_GATE_ENABLED = false;
 
+// Only the first ~400 characters of a reply are read aloud (matches the backend's voice cap).
+const MAX_SPOKEN_CHARS = 400;
+
 const WELCOME_MESSAGE =
   "Hi, I'm Intellia. Ask me anything about e-commerce or insurance — refund policies, shipping, " +
   'claims, coverage, you name it.';
 
 const ChatPage = () => {
   const { user, login, logout } = useAuth();
-  const [messages, setMessages] = useState([{ id: nextId(), role: 'bot', text: WELCOME_MESSAGE }]);
+  const [messages, setMessages] = useState(() => {
+    const stored = getStoredSessionId() ? getStoredMessages() : [];
+    return stored.length > 0 ? stored : [{ id: nextId(), role: 'bot', text: WELCOME_MESSAGE }];
+  });
   const [sessionId, setSessionId] = useState(() => getStoredSessionId());
   const [isSending, setIsSending] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [backendStatus, setBackendStatus] = useState('checking');
   const [showCapabilities, setShowCapabilities] = useState(false);
 
+  const [voice, setVoice] = useState({ enabled: false, default_voice: '' });
+  const [speakReplies, setSpeakReplies] = useState(false);
+
   const pendingQuestionRef = useRef(null);
+  const voiceNameRef = useRef('');
+  const speechRef = useRef(null);
+  if (speechRef.current === null) {
+    speechRef.current = new SpeechQueue((text) => fetchSpeech(text, voiceNameRef.current));
+  }
+
+  const stopSpeaking = useCallback(() => speechRef.current.stop(), [])
+
+  useEffect(() => {
+    getVoiceStatus().then((v) => {
+      voiceNameRef.current = v.default_voice;
+      setVoice(v);
+    });
+    return stopSpeaking;
+  }, [stopSpeaking])
+
+  useEffect(() => {
+    storeMessages(messages);
+  }, [messages])
 
   useEffect(() => {
     checkHealth()
@@ -68,23 +104,73 @@ const ChatPage = () => {
       const userMsg = { id: nextId(), role: 'user', text };
       setMessages((prev) => [...prev, userMsg]);
       setIsSending(true);
+      stopSpeaking();
+
+      const wantSpeech = voice.enabled && (opts.viaVoice || speakReplies);
+      const botId = nextId();
+      let streamed = '';        // everything the model has streamed so far
+      let speakBuffer = '';     // streamed text not yet handed to the speech queue
+      let spokenChars = 0;
+      let startedStreaming = false;
+
+      const speakSentence = (sentence) => {
+        if (spokenChars >= MAX_SPOKEN_CHARS) return;
+        spokenChars += sentence.length;
+        speechRef.current.enqueue(sentence);
+      };
+
+      const onToken = (piece) => {
+        streamed += piece;
+        if (!startedStreaming) {
+          startedStreaming = true;
+          setIsStreaming(true);
+          setMessages((prev) => [...prev, { id: botId, role: 'bot', text: streamed }]);
+        } else {
+          const snapshot = streamed;
+          setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, text: snapshot } : m)));
+        }
+        if (wantSpeech) {
+          speakBuffer += piece;
+          const { sentences, rest } = takeSentences(speakBuffer);
+          speakBuffer = rest;
+          sentences.forEach(speakSentence);
+        }
+      };
 
       try {
-        const data = await sendChatMessage(text, sessionId);
+        const data = await streamChatMessage(text, sessionId, onToken);
         setSessionId(data.session_id);
         storeSessionId(data.session_id);
         setBackendStatus('online');
 
         const botMsg = {
-          id: nextId(),
+          id: botId,
           role: 'bot',
           text: data.reply || '(no reply text returned)',
           domain: data.domain,
           toolCalls: data.tool_calls,
         }
-        setMessages((prev) => [...prev, botMsg]);
+        setMessages((prev) =>
+          startedStreaming ? prev.map((m) => (m.id === botId ? botMsg : m)) : [...prev, botMsg]
+        );
+
+        if (wantSpeech) {
+          if (startedStreaming && streamed.trim() === botMsg.text.trim()) {
+            // The live preview matched the final reply: just say what is left.
+            const tail = speakBuffer.trim();
+            if (tail) speakSentence(tail);
+          } else {
+            // The final reply differs from what streamed (e.g. text before a
+            // tool call): drop the preview audio and speak the real answer.
+            stopSpeaking();
+            spokenChars = 0;
+            speakSentence(botMsg.text);
+          }
+        }
       } catch (err) {
         setBackendStatus('offline');
+        stopSpeaking();
+        if (startedStreaming) setMessages((prev) => prev.filter((m) => m.id !== botId));
         const message = err instanceof Error ? err.message : String(err);
         setMessages((prev) => [
           ...prev,
@@ -97,9 +183,10 @@ const ChatPage = () => {
         ])
       } finally {
         setIsSending(false);
+        setIsStreaming(false);
       }
     },
-    [sessionId, user]
+    [sessionId, user, voice.enabled, speakReplies, stopSpeaking]
   )
 
   // Listens for the login tab's postMessage (see pages/LoginPage). Runs
@@ -161,9 +248,11 @@ const ChatPage = () => {
 
   const handleReset = useCallback(() => {
     clearStoredSessionId();
+    clearStoredMessages();
+    stopSpeaking();
     setSessionId(null);
     setMessages([{ id: nextId(), role: 'bot', text: WELCOME_MESSAGE }]);
-  }, [])
+  }, [stopSpeaking])
 
   const handleSignOut = useCallback(() => {
     logout();
@@ -179,9 +268,12 @@ const ChatPage = () => {
         onSignIn={() => handleOpenLogin({ pendingText: '' })}
         onSignOut={handleSignOut}
       />
-      <ChatWindow messages={messages} isSending={isSending} onOpenLogin={handleOpenLogin} />
+      <ChatWindow messages={messages} isSending={isSending && !isStreaming} onOpenLogin={handleOpenLogin} />
       <ChatInput
-        onSend={(text) => void handleSend(text)}
+        onSend={(text, opts) => void handleSend(text, opts)}
+        voiceEnabled={voice.enabled}
+        speakReplies={speakReplies}
+        onToggleSpeak={() => { stopSpeaking(); setSpeakReplies((v) => !v); }}
         disabled={isSending}
         accountType={user ? user.accountType : null}
       />

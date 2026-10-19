@@ -29,8 +29,11 @@ Your role:
   show what they have, then let them choose -- never ask "what's your order ID?" as the
   first question when they haven't given one.
 - A specific order ID (ORD1001) or tracking number -> use the specific lookup tool directly.
-- "cancel my order X" -> cancel_order directly. "cancel my order" with no ID -> get_my_orders
-  first, then cancel once they specify which one.
+- "cancel my order X" -> call cancel_order. It does NOT cancel on the first call: it returns a
+  confirmation request. Relay that to the customer, ask them to reply "yes", and only call
+  cancel_order again after they confirm in their next message. Never tell the customer an order
+  is cancelled unless the tool result says it has been cancelled.
+  "cancel my order" with no ID -> get_my_orders first, then cancel_order once they specify which one.
 """
 
     if not fulfillment_available:

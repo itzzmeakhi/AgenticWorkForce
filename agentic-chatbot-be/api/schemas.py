@@ -29,3 +29,18 @@ class HealthResponse(BaseModel):
 
 class ReindexResponse(BaseModel):
     chunks_indexed: int
+
+
+class SpeakRequest(BaseModel):
+    text: str
+    voice: Optional[str] = None
+
+
+class TranscribeResponse(BaseModel):
+    text: str
+
+
+class VoiceStatus(BaseModel):
+    enabled: bool
+    voices: dict
+    default_voice: str

@@ -49,3 +49,41 @@
     @include primary-button;
   }
 }
+
+.voice-note {
+  font-size: $font-sm;
+  color: var(--text-dim);
+}
+
+.chat-input-form .voice-btn {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  color: var(--text);
+  padding: $space-2 $space-5;
+  border-radius: $radius-pill;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    border-color: var(--accent);
+  }
+
+  &.on {
+    border-color: var(--accent);
+  }
+
+  &.recording {
+    border-color: #e5484d;
+    color: #e5484d;
+    animation: voice-pulse 1.2s ease-in-out infinite;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+@keyframes voice-pulse {
+  50% { opacity: 0.6; }
+}

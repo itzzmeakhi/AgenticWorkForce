@@ -10,9 +10,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/chat': 'http://localhost:8000',
+      '/chat': 'http://localhost:8000', // also covers /chat/stream
       '/health': 'http://localhost:8000',
       '/admin': 'http://localhost:8000',
+      '/voice': 'http://localhost:8000',
     },
   },
   build: {

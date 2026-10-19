@@ -69,13 +69,91 @@ class TestOrderFlow:
         assert any(tc["tool"] == "track_package" for tc in result["tool_calls"])
         assert "TRK7841002298" in result["reply"]
 
-    def test_cancel_order(self, fulfillment_wired):
+    def test_cancel_order_requires_confirmation_then_cancels(self, fulfillment_wired):
+        from agent.contact_center_agent import CallCenterAgent
+        from fulfillment_api import mock_data
+
+        agent = CallCenterAgent()
+        first = agent.chat("Please cancel order ORD1003")
+        assert any(tc["tool"] == "cancel_order" for tc in first["tool_calls"])
+        assert "confirmation needed" in first["reply"].lower()
+        assert mock_data.ORDERS["ORD1003"].status.value == "processing"  # nothing cancelled yet
+
+        second = agent.chat("Yes, please cancel order ORD1003")
+        assert "has been cancelled" in second["reply"].lower()
+        assert mock_data.ORDERS["ORD1003"].status.value == "cancelled"
+
+
+class TestCancelConfirmation:
+    """cancel_order is destructive: it must never run on the first request, and
+    only runs when the customer's very next message is a clear yes for the
+    same order. Enforced in code, so it holds regardless of the LLM."""
+
+    @staticmethod
+    def _status(order_id):
+        from fulfillment_api import mock_data
+
+        return mock_data.ORDERS[order_id].status.value
+
+    def test_first_request_never_cancels(self, fulfillment_wired):
         from agent.contact_center_agent import CallCenterAgent
 
         agent = CallCenterAgent()
-        result = agent.chat("Please cancel order ORD1003")
-        assert any(tc["tool"] == "cancel_order" for tc in result["tool_calls"])
-        assert "cancelled" in result["reply"].lower()
+        agent.chat("Cancel order ORD1003")
+        assert self._status("ORD1003") == "processing"
+        assert agent.pending_cancellation == {"order_id": "ORD1003", "turn": 1}
+
+    def test_negative_reply_does_not_cancel(self, fulfillment_wired):
+        from agent.contact_center_agent import CallCenterAgent
+
+        agent = CallCenterAgent()
+        agent.chat("Cancel order ORD1003")
+        result = agent.chat("No, don't cancel order ORD1003")
+        assert "confirmation needed" in result["reply"].lower()
+        assert self._status("ORD1003") == "processing"
+
+    def test_confirmation_must_come_on_the_next_turn(self, fulfillment_wired):
+        from agent.contact_center_agent import CallCenterAgent
+
+        agent = CallCenterAgent()
+        agent.chat("Cancel order ORD1003")
+        agent.chat("What is your refund policy?")  # an unrelated turn in between
+        agent.chat("Yes, cancel order ORD1003")
+        assert self._status("ORD1003") == "processing"  # old confirmation request expired, so asked again
+
+    def test_confirmation_for_a_different_order_does_not_cancel(self, fulfillment_wired):
+        from agent.contact_center_agent import CallCenterAgent
+
+        agent = CallCenterAgent()
+        agent.chat("Cancel order ORD1003")
+        agent.chat("Yes, cancel order ORD1002")
+        assert self._status("ORD1003") == "processing"
+        assert self._status("ORD1002") == "shipped"
+
+    def test_pending_state_cleared_after_cancellation(self, fulfillment_wired):
+        from agent.contact_center_agent import CallCenterAgent
+
+        agent = CallCenterAgent()
+        agent.chat("Cancel order ORD1003")
+        agent.chat("Yes, cancel order ORD1003")
+        assert agent.pending_cancellation is None
+        again = agent.chat("Cancel order ORD1003")  # already cancelled: a fresh request asks again
+        assert agent.pending_cancellation == {"order_id": "ORD1003", "turn": 3}
+        assert "confirmation needed" in again["reply"].lower()
+
+    @pytest.mark.parametrize("text", ["yes", "Yes please", "yeah, go ahead", "Confirm", "ok do it", "Yes, cancel it"])
+    def test_clear_yes_is_affirmative(self, text):
+        from agent.contact_center_agent import _is_affirmative
+
+        assert _is_affirmative(text)
+
+    @pytest.mark.parametrize(
+        "text", ["no", "No, keep it", "don't cancel", "yes but wait", "I'm not sure", "maybe later", "cancel order ORD1003", ""]
+    )
+    def test_negative_or_ambiguous_is_not_affirmative(self, text):
+        from agent.contact_center_agent import _is_affirmative
+
+        assert not _is_affirmative(text)
 
 
 class TestInsuranceWipFlow:
@@ -103,6 +181,46 @@ class TestDomainSwitching:
         second = agent.chat("Now tell me about my insurance policy")
         assert second["domain"] == "insurance"
         assert any(tc["tool"] == "insurance_status_wip" for tc in second["tool_calls"])
+
+
+class TestToolTracePerTurn:
+    """The tool trace returned by chat() must describe only the current turn,
+    not every tool call accumulated in the conversation history."""
+
+    def test_trace_contains_only_current_turn(self, fulfillment_wired):
+        from agent.contact_center_agent import CallCenterAgent
+
+        agent = CallCenterAgent()
+        first = agent.chat("What is the status of order ORD1001?")
+        assert [tc["tool"] for tc in first["tool_calls"]] == ["get_order_status"]
+
+        second = agent.chat("Can you track order ORD1002 for me?")
+        assert [tc["tool"] for tc in second["tool_calls"]] == ["track_package"]
+
+        third = agent.chat("Now tell me about my insurance policy")
+        assert [tc["tool"] for tc in third["tool_calls"]] == ["insurance_status_wip"]
+
+    def test_same_tool_in_consecutive_turns_keeps_own_output(self, fulfillment_wired):
+        from agent.contact_center_agent import CallCenterAgent
+
+        agent = CallCenterAgent()
+        first = agent.chat("What is the status of order ORD1001?")
+        second = agent.chat("What is the status of order ORD1003?")
+
+        assert len(first["tool_calls"]) == 1 and len(second["tool_calls"]) == 1
+        assert second["tool_calls"][0]["args"] == {"order_id": "ORD1003"}
+        assert "ORD1003" in second["tool_calls"][0]["output"]
+        assert "ORD1001" not in second["tool_calls"][0]["output"]
+
+    def test_turn_without_tools_has_empty_trace_and_no_stale_reply(self, fulfillment_wired):
+        from agent.contact_center_agent import CallCenterAgent
+
+        agent = CallCenterAgent()
+        agent.chat("What is the status of order ORD1001?")
+        result = agent.chat("hello there")
+
+        assert result["tool_calls"] == []
+        assert "ORD1001" not in result["reply"]
 
 
 class TestKnowledgeGrounding:
