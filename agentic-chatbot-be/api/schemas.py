@@ -44,3 +44,21 @@ class VoiceStatus(BaseModel):
     enabled: bool
     voices: dict
     default_voice: str
+
+
+class LoginRequest(BaseModel):
+    domain: str   # 'ecommerce' | 'insurance'
+    email: str
+    password: str
+
+
+class LoginUser(BaseModel):
+    customer_id: str
+    email: str
+    name: str
+    domain: str
+
+
+class LoginResponse(BaseModel):
+    token: str
+    user: LoginUser

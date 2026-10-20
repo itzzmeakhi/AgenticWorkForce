@@ -71,10 +71,8 @@ class MockChatModel(BaseChatModel):
             return None
 
         def try_my_orders():
-            if want("get_my_orders") and "@" in text and ("order" in text or "my order" in text):
-                email = _extract_email(text)
-                if email:
-                    return "get_my_orders", {"customer_email": email}
+            if want("get_my_orders") and re.search(r"\bmy orders?\b", text):
+                return "get_my_orders", {}
             return None
 
         def try_products():
@@ -84,9 +82,32 @@ class MockChatModel(BaseChatModel):
                 return "search_products", {"query": "", "category": "", "max_price": max_price}
             return None
 
-        def try_insurance_wip():
-            if want("insurance_status_wip") and any(k in text for k in ["policy", "claim", "premium", "coverage", "insurance"]):
-                return "insurance_status_wip", {}
+        def try_policy_details():
+            pid = _extract_id(text, "pol")
+            if want("get_policy_details") and pid:
+                return "get_policy_details", {"policy_id": pid}
+            return None
+
+        def try_claim_status():
+            cid = _extract_id(text, "clm")
+            if want("get_claim_status") and cid:
+                return "get_claim_status", {"claim_id": cid}
+            return None
+
+        def try_file_claim():
+            pid = _extract_id(text, "pol")
+            if want("file_claim") and pid and "claim" in text and any(k in text for k in ["file", "raise", "submit"]):
+                return "file_claim", {"policy_id": pid, "claim_type": "General", "amount": _extract_amount(text), "description": last_human}
+            return None
+
+        def try_my_claims():
+            if want("get_my_claims") and re.search(r"\bmy claims?\b", text):
+                return "get_my_claims", {}
+            return None
+
+        def try_my_policies():
+            if want("get_my_policies") and re.search(r"\bmy polic(y|ies)\b", text):
+                return "get_my_policies", {}
             return None
 
         def try_knowledge():
@@ -97,7 +118,8 @@ class MockChatModel(BaseChatModel):
 
         candidates = [
             try_cancel_order, try_track_package, try_order_status, try_my_orders,
-            try_insurance_wip, try_products, try_knowledge,
+            try_file_claim, try_claim_status, try_policy_details, try_my_claims, try_my_policies,
+            try_products, try_knowledge,
         ]
 
         tool_calls = []

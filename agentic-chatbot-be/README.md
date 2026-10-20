@@ -195,16 +195,39 @@ keys):
 
 ## 10. What's WIP
 
-- Real insurance data model and operations (`Policy`/`Claim`, policy/claim
-  lookup tools) -- this build has only the honest `insurance_status_wip`
-  stub.
 - Pinecone production vector store (this build is offline-Chroma-only).
 - FastMCP transport for the Fulfillment API (this build is REST-only).
-- Voice channel -- Deepgram Nova-3 (STT) / Aura-2 (TTS).
 - Tavily web search tool.
 - LangSmith tracing configuration.
 
-## 11. Security note
+## 11. Authentication and access control
+
+Sign-in is per domain. The Fulfillment API keeps a **separate customer store
+for e-commerce and for insurance** (`fulfillment_api/customers.py`), with
+separate dummy data (orders vs. policies/claims). The login screen's account
+type decides which store the credentials are checked against.
+
+- `POST /auth/login {domain, email, password}` (on the Agent API, proxied to the
+  Fulfillment API) returns a signed JWT (HS256, `JWT_TTL_MINUTES`, default 4h).
+  The token carries the customer id, email and **domain**.
+- Both services verify the token with the same `JWT_SECRET` (set it in `.env`;
+  a dev-only default is used with a warning otherwise).
+- The agent forwards the signed-in customer's token on every tool call. Tools
+  take no email/customer id from the model; the Fulfillment API reads the
+  identity from the token, returns only that customer's records, answers
+  "not found" for records that belong to someone else, and returns 403 when a
+  token for one domain is used on the other domain's endpoints.
+- Chat sessions are bound to their owner; a different (or anonymous) caller
+  presenting someone else's session id gets a fresh session.
+- Products, the knowledge base and general questions need no sign-in.
+- 5 failed sign-ins on an account lock it for 60 seconds.
+
+Dummy accounts (all use password `demo1234`): e-commerce `abc@gmail.com`,
+`rahul@gmail.com`, `akhil@gmail.com`; insurance `neha@gmail.com`,
+`vikram@gmail.com`, `akhil@gmail.com` (a separate account from the e-commerce
+one). Tests: `tests/test_auth_access_control.py`.
+
+## 12. Security note
 
 Do not commit a real `.env` with live API keys. `.env.example` ships with
 every value empty -- copy it to `.env` and fill in only what you need.

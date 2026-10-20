@@ -18,3 +18,17 @@ def test_ambiguous_falls_back_to_previous_domain():
 
 def test_ambiguous_no_previous_domain_falls_back_to_general():
     assert classify_domain("hello there") == "general"
+
+
+def test_plural_policies_routes_to_insurance():
+    assert classify_domain("Show me my policies") == "insurance"
+
+
+def test_bare_ids_route_to_their_domain():
+    assert classify_domain("status of ORD1001") == "ecommerce"
+    assert classify_domain("what about POL2001", previous_domain="ecommerce") == "insurance"
+    assert classify_domain("how is CLM3001 going", previous_domain="ecommerce") == "insurance"
+
+
+def test_refund_policy_stays_ecommerce():
+    assert classify_domain("What is your refund policy?") == "ecommerce"

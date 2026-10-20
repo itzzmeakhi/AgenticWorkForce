@@ -1,13 +1,16 @@
 import json
 import uuid
+from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Request
+import httpx
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent.contact_center_agent import CallCenterAgent
-from agent.fulfillment_client import check_fulfillment_api_health
-from api.schemas import ChatRequest, ChatResponse, HealthResponse, ReindexResponse, SpeakRequest, TranscribeResponse, VoiceStatus
+from agent.fulfillment_client import FULFILLMENT_API_URL, check_fulfillment_api_health
+from api.schemas import ChatRequest, ChatResponse, HealthResponse, LoginRequest, LoginResponse, ReindexResponse, SpeakRequest, TranscribeResponse, VoiceStatus
+from security.tokens import Identity, TokenError, bearer_token, verify_token
 from voice import deepgram_voice as dv
 
 app = FastAPI(title="Contact Center Agent API", version="0.6.0")
@@ -20,14 +23,66 @@ app.add_middleware(
 )
 
 # In-memory per-session agent store. Each session gets its own
-# CallCenterAgent instance (its own conversation_history/domain state).
+# CallCenterAgent instance (its own conversation_history/domain state), and is
+# bound to the customer it was created for (None = anonymous).
 SESSIONS: dict = {}
+SESSION_OWNERS: dict = {}
 
 
-def _get_agent(session_id: str) -> CallCenterAgent:
+def _owner_key(identity: Optional[Identity]) -> Optional[str]:
+    return f"{identity.domain}:{identity.customer_id}" if identity else None
+
+
+def _identity_from_header(authorization: Optional[str]) -> tuple:
+    """(identity, token) from an Authorization header; (None, None) when anonymous.
+    A token that is present but invalid/expired is a 401, never silently anonymous."""
+    token = bearer_token(authorization)
+    if token is None:
+        return None, None
+    try:
+        return verify_token(token), token
+    except TokenError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+def _get_agent(session_id: str, identity: Optional[Identity] = None, token: Optional[str] = None) -> tuple:
+    """(agent, session_id) for this caller. A session id that belongs to a different
+    customer (or to a signed-in customer when the caller is anonymous) is never
+    reused: the caller gets a fresh session instead, so no history can leak."""
+    owner = _owner_key(identity)
+    if session_id in SESSIONS and SESSION_OWNERS.get(session_id) != owner:
+        session_id = str(uuid.uuid4())
     if session_id not in SESSIONS:
         SESSIONS[session_id] = CallCenterAgent()
-    return SESSIONS[session_id]
+        SESSION_OWNERS[session_id] = owner
+    agent = SESSIONS[session_id]
+    agent.set_auth(identity, token)
+    return agent, session_id
+
+
+@app.post("/auth/login", response_model=LoginResponse)
+def auth_login(req: LoginRequest):
+    """Sign in to one domain ('ecommerce' or 'insurance'). Credentials are checked
+    by the Fulfillment API against that domain's own customer store."""
+    try:
+        resp = httpx.post(f"{FULFILLMENT_API_URL}/auth/login", json=req.model_dump(), timeout=5.0)
+    except httpx.HTTPError:
+        raise HTTPException(status_code=503, detail="Sign-in service is unavailable. Is the Fulfillment API running on port 8010?")
+    if resp.status_code != 200:
+        try:
+            detail = resp.json().get("detail", "Sign-in failed")
+        except ValueError:
+            detail = "Sign-in failed"
+        raise HTTPException(status_code=resp.status_code if resp.status_code in (400, 401, 429) else 502, detail=detail)
+    return resp.json()
+
+
+@app.get("/auth/me")
+def auth_me(authorization: Optional[str] = Header(default=None)):
+    identity, _ = _identity_from_header(authorization)
+    if identity is None:
+        raise HTTPException(status_code=401, detail="Sign in required")
+    return identity.public()
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -40,20 +95,20 @@ def health():
 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
-    session_id = req.session_id or str(uuid.uuid4())
-    agent = _get_agent(session_id)
+def chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
+    identity, token = _identity_from_header(authorization)
+    agent, session_id = _get_agent(req.session_id or str(uuid.uuid4()), identity, token)
     result = agent.chat(req.message)
     return ChatResponse(session_id=session_id, reply=result["reply"], domain=result["domain"], tool_calls=result["tool_calls"])
 
 
 @app.post("/chat/stream")
-def chat_stream(req: ChatRequest):
+def chat_stream(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
     """Server-sent events: `token` frames as the model writes, then one `done`
     frame with the same payload /chat returns. Lets the UI show (and speak) the
     reply before the full turn has finished."""
-    session_id = req.session_id or str(uuid.uuid4())
-    agent = _get_agent(session_id)
+    identity, token = _identity_from_header(authorization)
+    agent, session_id = _get_agent(req.session_id or str(uuid.uuid4()), identity, token)
 
     def frames():
         try:
