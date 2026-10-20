@@ -13,14 +13,6 @@ go through genuine sign-in tokens and ownership checks. Customers used:
 import pytest
 
 
-@pytest.fixture
-def knowledge_ready(isolated_chroma_store):
-    from ingestion.local_index import build_local_index
-
-    build_local_index(force=True)
-    yield
-
-
 class TestOrderFlow:
     def test_order_status_lookup(self, make_agent):
         agent = make_agent("abc@gmail.com")

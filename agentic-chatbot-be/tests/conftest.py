@@ -129,3 +129,11 @@ def make_agent(fulfillment_wired, login):
         return agent
 
     return _make
+
+
+@pytest.fixture
+def knowledge_ready(isolated_chroma_store):
+    from ingestion.local_index import build_local_index
+
+    build_local_index(force=True)
+    yield

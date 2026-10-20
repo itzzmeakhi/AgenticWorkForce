@@ -111,7 +111,7 @@ class MockChatModel(BaseChatModel):
             return None
 
         def try_knowledge():
-            keywords = ["how long", "refund", "eligib", "timeline", "policy", "faq", "how do i"]
+            keywords = ["how long", "refund", "eligib", "timeline", "policy", "faq", "how do i", "claims process", "claim process", "premium", "renew", "grace", "cover", "exclu", "waiting period"]
             if want("search_comprehensive_knowledge") and any(k in text for k in keywords):
                 return "search_comprehensive_knowledge", {"query": last_human, "domain": self.domain_hint}
             return None

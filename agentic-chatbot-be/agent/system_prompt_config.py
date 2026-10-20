@@ -1,11 +1,10 @@
 
-def get_system_prompt(domain: str, fulfillment_available: bool, insurance_available: bool = False, identity=None) -> str:
+def get_system_prompt(domain: str, fulfillment_available: bool, identity=None) -> str:
     """Build the complete system prompt for the current turn.
 
     Args:
         domain: The domain classify_domain() detected for this turn.
         fulfillment_available: Whether the Fulfillment API service is reachable.
-        insurance_available: Whether real insurance tools are wired up.
         identity: The signed-in customer (security.tokens.Identity), or None
             when the customer is anonymous.
     """
@@ -30,6 +29,11 @@ Your role:
   show what they have, then let them choose -- never ask "what's your order ID?" or "what's
   your email?" -- the customer is identified by their sign-in, not by anything they type.
 - "my policy/policies/claims" -> get_my_policies / get_my_claims first, same rule.
+- A policy ID (POL2001) -> get_policy_details; a claim ID (CLM3001) -> get_claim_status.
+- "file a claim" -> file_claim with the policy, a short claim type, the amount and a one-line
+  description. If any of those is missing, ask for it (never invent an amount).
+- General insurance questions (how claims work, grace periods, what is covered or excluded)
+  -> search the knowledge base with domain "insurance"; do not guess.
 - A specific order ID (ORD1001) or tracking number -> use the specific lookup tool directly.
 - "cancel my order X" -> call cancel_order. It does NOT cancel on the first call: it returns a
   confirmation request. Relay that to the customer, ask them to reply "yes", and only call
@@ -43,12 +47,6 @@ Your role:
             "\n**NOTE: the Fulfillment API service is not currently reachable.** If a "
             "fulfillment tool call fails, tell the customer order lookups are temporarily "
             "unavailable rather than guessing at an answer.\n"
-        )
-
-    if not insurance_available:
-        base += (
-            "\n**Insurance capabilities (this build): none.** You have no policy/claim lookup "
-            "tools -- say plainly that insurance support is not available rather than guessing.\n"
         )
 
     if identity is not None:

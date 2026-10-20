@@ -348,9 +348,9 @@ class TestAgentAccessControl:
     def test_system_prompt_names_the_customer_but_never_the_email(self):
         from agent.system_prompt_config import get_system_prompt
 
-        prompt = get_system_prompt("ecommerce", True, True, Identity("CUST-E-001", "abc@gmail.com", "Priya Nair", "ecommerce"))
+        prompt = get_system_prompt("ecommerce", True, Identity("CUST-E-001", "abc@gmail.com", "Priya Nair", "ecommerce"))
         assert "Priya Nair" in prompt and "abc@gmail.com" not in prompt
-        assert "NOT signed in" in get_system_prompt("general", True, True, None)
+        assert "NOT signed in" in get_system_prompt("general", True, None)
 
 
 # =========================================================================== Agent API: login proxy, tokens, sessions
@@ -472,3 +472,44 @@ class TestGreeting:
     def test_greeting_works_over_the_stream_too(self, api, login):
         r = api.post("/chat/stream", json={"message": "hi"}, headers=auth(login("ecommerce", "rahul@gmail.com")))
         assert "Hi Rahul!" in r.text and "event: done" in r.text
+
+
+# =========================================================================== insurance is a real domain now
+class TestInsuranceDomainIsReal:
+    def test_the_wip_stub_is_gone(self):
+        from agent import fulfillment_client as fc
+        from fulfillment_api import operations as ops
+
+        assert not hasattr(fc, "insurance_status_wip") and not hasattr(ops, "insurance_status_wip")
+        assert {t.name for t in fc.INSURANCE_TOOLS} == {
+            "get_my_policies", "get_policy_details", "get_my_claims", "get_claim_status", "file_claim"}
+
+    def test_system_prompt_no_longer_says_insurance_is_unavailable(self):
+        from agent.system_prompt_config import get_system_prompt
+
+        for identity in (None, Identity("CUST-I-001", "neha@gmail.com", "Neha Kapoor", "insurance")):
+            prompt = get_system_prompt("insurance", True, identity).lower()
+            assert "no policy/claim lookup" not in prompt and "none yet" not in prompt and "not available" not in prompt
+            assert "get_policy_details" in prompt and "file_claim" in prompt
+
+    def test_the_old_flag_is_removed(self):
+        import agent.contact_center_agent as cca
+
+        assert not hasattr(cca, "INSURANCE_AVAILABLE")
+
+    def test_file_a_claim_through_the_agent(self, make_agent):
+        agent = make_agent("akhil@gmail.com", domain="insurance")
+        result = agent.chat("File a claim on POL2003 for accidental damage, amount 5000")
+        assert [tc["tool"] for tc in result["tool_calls"]] == ["file_claim"]
+        assert "has been filed" in result["reply"].lower()
+
+    def test_claim_filed_through_the_agent_is_visible_only_to_its_owner(self, make_agent):
+        akhil = make_agent("akhil@gmail.com", domain="insurance")
+        akhil.chat("File a claim on POL2003 for accidental damage, amount 5000")
+        assert "CLM3004" in akhil.chat("Show me my claims")["reply"]
+        assert "CLM3004" not in make_agent("neha@gmail.com", domain="insurance").chat("Show me my claims")["reply"]
+
+    def test_general_insurance_question_is_answered_from_the_knowledge_base(self, make_agent, knowledge_ready):
+        result = make_agent("neha@gmail.com", domain="insurance").chat("What is the premium grace period?")
+        assert any(tc["tool"] == "search_comprehensive_knowledge" for tc in result["tool_calls"])
+        assert "insurance_premiums_and_renewals.md" in result["reply"]

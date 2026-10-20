@@ -19,9 +19,6 @@ from security.tokens import Identity
 
 logger = logging.getLogger(__name__)
 
-# Insurance tools (policies, claims) are wired to the Fulfillment API
-INSURANCE_AVAILABLE = True
-
 
 def _domain_tools(domain: str, fulfillment_available: bool):
     """Re-derive the bound tool list from the current domain -- the
@@ -146,7 +143,7 @@ class CallCenterAgent:
             domain = state.get("domain", "general")
             tools = _domain_tools(domain, self.fulfillment_available)
 
-            system_prompt_text = get_system_prompt(domain, self.fulfillment_available, INSURANCE_AVAILABLE, self.identity)
+            system_prompt_text = get_system_prompt(domain, self.fulfillment_available, self.identity)
             prompt = ChatPromptTemplate.from_messages([
                 ("system", system_prompt_text), ("placeholder", "{messages}"),
             ])

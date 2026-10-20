@@ -6,6 +6,9 @@ from config import KNOWLEDGE_BASE_DIR
 DOMAIN_BY_FILE = {
     "ecommerce_refund_policy.md": "ecommerce",
     "ecommerce_shipping_policy.md": "ecommerce",
+    "insurance_claims_process.md": "insurance",
+    "insurance_premiums_and_renewals.md": "insurance",
+    "insurance_coverage_and_exclusions.md": "insurance",
     "general_contact_center_faq.md": "general",
 }
 
