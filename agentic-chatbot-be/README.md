@@ -201,7 +201,6 @@ keys):
 
 - Pinecone production vector store (this build is offline-Chroma-only).
 - FastMCP transport for the Fulfillment API (this build is REST-only).
-- Tavily web search tool.
 - LangSmith tracing configuration.
 
 ## 11. Authentication and access control

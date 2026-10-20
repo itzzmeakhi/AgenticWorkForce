@@ -13,6 +13,7 @@ from agent.fulfillment_client import (
 )
 from agent.knowledge_tools import KNOWLEDGE_TOOLS
 from agent.llm_provider import get_llm
+from agent.web_search_tool import WEB_TOOLS
 from agent.state import AgentState
 from agent.system_prompt_config import get_system_prompt
 from security.tokens import Identity
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 def _domain_tools(domain: str, fulfillment_available: bool):
     """Re-derive the bound tool list from the current domain -- the
     mechanism behind domain fluidity."""
-    knowledge = KNOWLEDGE_TOOLS
+    knowledge = KNOWLEDGE_TOOLS + WEB_TOOLS
     if not fulfillment_available:
         return knowledge
     if domain == "ecommerce":
@@ -89,7 +90,7 @@ class CallCenterAgent:
                 "`uvicorn fulfillment_api.server:app --port 8010`. Running with knowledge search only."
             )
 
-        all_tools = CUSTOMER_FACING_TOOLS + PRODUCT_TOOLS + INSURANCE_TOOLS + KNOWLEDGE_TOOLS
+        all_tools = CUSTOMER_FACING_TOOLS + PRODUCT_TOOLS + INSURANCE_TOOLS + KNOWLEDGE_TOOLS + WEB_TOOLS
         self.available_tools = {t.name: t for t in all_tools}
 
         self.graph = self._create_graph()

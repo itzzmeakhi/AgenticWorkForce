@@ -110,6 +110,11 @@ class MockChatModel(BaseChatModel):
                 return "get_my_policies", {}
             return None
 
+        def try_web_search():
+            if want("web_search") and any(k in text for k in ["search the web", "search online", "on the internet", "latest news", "news about", "look up online", "google "]):
+                return "web_search", {"query": last_human, "max_results": 3}
+            return None
+
         def try_knowledge():
             keywords = ["how long", "refund", "eligib", "timeline", "policy", "faq", "how do i", "claims process", "claim process", "premium", "renew", "grace", "cover", "exclu", "waiting period"]
             if want("search_comprehensive_knowledge") and any(k in text for k in keywords):
@@ -119,7 +124,7 @@ class MockChatModel(BaseChatModel):
         candidates = [
             try_cancel_order, try_track_package, try_order_status, try_my_orders,
             try_file_claim, try_claim_status, try_policy_details, try_my_claims, try_my_policies,
-            try_products, try_knowledge,
+            try_web_search, try_products, try_knowledge,
         ]
 
         tool_calls = []
