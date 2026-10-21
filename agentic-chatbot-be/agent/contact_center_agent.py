@@ -70,7 +70,6 @@ class CallCenterAgent:
         self.llm = get_llm()
         self.conversation_history: List[BaseMessage] = []
         self.domain = "general"
-        self.customer_context: Dict[str, Any] = {}
         self.turn_count = 0
         # Set when cancel_order has been intercepted and the customer was asked
         # to confirm: {"order_id": ..., "turn": <turn the question was asked>}.
@@ -215,15 +214,13 @@ class CallCenterAgent:
 
         return workflow
 
-    def _begin_turn(self, message: str, customer_context: Optional[Dict[str, Any]]):
+    def _begin_turn(self, message: str):
         self.turn_count += 1
-        if customer_context:
-            self.customer_context.update(customer_context)
         self.conversation_history.append(HumanMessage(content=message))
         # Messages up to here are history (including this turn's human message);
         # anything after this index was produced during this turn.
         turn_start = len(self.conversation_history)
-        graph_input = {"messages": self.conversation_history, "domain": self.domain, "customer_context": self.customer_context}
+        graph_input = {"messages": self.conversation_history, "domain": self.domain}
         return graph_input, turn_start
 
     def _finish_turn(self, result: Dict[str, Any], turn_start: int) -> Dict[str, Any]:
@@ -266,17 +263,17 @@ class CallCenterAgent:
         self.conversation_history.append(AIMessage(content=reply))
         return {"reply": reply, "domain": self.domain, "tool_calls": []}
 
-    def chat(self, message: str, customer_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def chat(self, message: str) -> Dict[str, Any]:
         """Run one turn. Returns {reply, domain, tool_calls} -- the same
         shape api/main.py's /chat endpoint hands back over HTTP."""
         greeting = self._greeting_turn(message)
         if greeting is not None:
             return greeting
-        graph_input, turn_start = self._begin_turn(message, customer_context)
+        graph_input, turn_start = self._begin_turn(message)
         result = self.app.invoke(graph_input, config={"recursion_limit": 15})
         return self._finish_turn(result, turn_start)
 
-    def chat_stream(self, message: str, customer_context: Optional[Dict[str, Any]] = None):
+    def chat_stream(self, message: str):
         """Same turn as chat(), but yields events as the graph runs:
         ("token", text) for each piece of model text from the agent node, then a
         single ("done", {reply, domain, tool_calls}). The "done" payload is the
@@ -287,7 +284,7 @@ class CallCenterAgent:
             yield "token", greeting["reply"]
             yield "done", greeting
             return
-        graph_input, turn_start = self._begin_turn(message, customer_context)
+        graph_input, turn_start = self._begin_turn(message)
         final_state = None
         for mode, payload in self.app.stream(
             graph_input, config={"recursion_limit": 15}, stream_mode=["messages", "values"]

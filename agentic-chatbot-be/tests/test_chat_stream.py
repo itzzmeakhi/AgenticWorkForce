@@ -49,7 +49,7 @@ def test_stream_keeps_history_like_chat():
 
 
 def test_stream_error_becomes_error_frame(monkeypatch):
-    def boom(self, message, customer_context=None):
+    def boom(self, message):
         raise RuntimeError("llm down")
         yield  # pragma: no cover
 
