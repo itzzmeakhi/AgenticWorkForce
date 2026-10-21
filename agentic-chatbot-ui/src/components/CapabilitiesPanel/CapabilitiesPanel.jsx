@@ -1,43 +1,14 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 
+import { capabilityGroups } from '../../utils/capabilities';
+
 import './CapabilitiesPanel.scss';
 
-const GROUPS = [
-  {
-    title: 'E-commerce',
-    color: '#22c55e',
-    items: [
-      'Check order status',
-      'Track a package (carrier + live location)',
-      'Cancel an order (before it ships)',
-      'Initiate a return (after delivery)',
-      'Place a new order',
-      'Search / browse the product catalog',
-      'Join a waitlist for out-of-stock items',
-      'Request a callback from a human agent',
-    ],
-  },
-  {
-    title: 'Insurance',
-    color: '#f59e0b',
-    items: ['Check policy details', 'Check claim status', 'File a new claim'],
-  },
-  {
-    title: 'Knowledge base (RAG)',
-    color: '#64748b',
-    items: [
-      'Refund & return policy',
-      'Shipping & tracking policy',
-      'Waitlist & callback policy',
-      'Insurance claims & policy FAQ',
-      'General contact-center FAQ',
-    ],
-  },
-];
-
-const CapabilitiesPanel = ({ open, onClose }) => {
+const CapabilitiesPanel = ({ open, onClose, accountType, voiceEnabled }) => {
   if (!open) return null;
+
+  const groups = capabilityGroups(accountType, voiceEnabled);
 
   return (
     <div className="capabilities-overlay" onClick={onClose}>
@@ -49,10 +20,12 @@ const CapabilitiesPanel = ({ open, onClose }) => {
           </button>
         </div>
         <p className="capabilities-subtitle">
-          Every capability below is backed by a real tool call the LangGraph agent can invoke — not
-          scripted responses. Ask in plain language; the agent decides which tool(s) to use.
+          {accountType
+            ? `You're signed in to ${accountType === 'insurance' ? 'Insurance' : 'E-commerce'}, so these are the things I can do for your account. `
+            : 'Sign in to use the account features below. '}
+          Every item is backed by a real tool or knowledge document. Ask in plain language.
         </p>
-        {GROUPS.map((group) => {
+        {groups.map((group) => {
           const titleStyle = { '--group-color': group.color }
           return (
             <div key={group.title} className="capabilities-group">
@@ -76,6 +49,8 @@ const CapabilitiesPanel = ({ open, onClose }) => {
 CapabilitiesPanel.propTypes = {
   open: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
+  accountType: PropTypes.oneOf(['ecommerce', 'insurance', 'both', null]),
+  voiceEnabled: PropTypes.bool,
 };
 
 export default CapabilitiesPanel;

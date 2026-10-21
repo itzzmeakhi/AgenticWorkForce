@@ -36,8 +36,8 @@ const AUTH_GATE_ENABLED = true;
 const MAX_SPOKEN_CHARS = 400;
 
 const WELCOME_MESSAGE =
-  "Hi, I'm Intellia. Ask me anything about e-commerce or insurance — refund policies, shipping, " +
-  'claims, coverage, you name it.';
+  "Hi, I'm Intellia. Ask me about e-commerce or insurance — products, refund and shipping policies, " +
+  'claims and coverage. Sign in to see your own orders, policies and claims.';
 
 const ChatPage = () => {
   const { user, login, logout } = useAuth();
@@ -302,7 +302,12 @@ const ChatPage = () => {
         disabled={isSending}
         accountType={user ? user.accountType : null}
       />
-      <CapabilitiesPanel open={showCapabilities} onClose={() => setShowCapabilities(false)} />
+      <CapabilitiesPanel
+        open={showCapabilities}
+        onClose={() => setShowCapabilities(false)}
+        accountType={user ? user.accountType : null}
+        voiceEnabled={voice.enabled}
+      />
     </div>
   )
 };

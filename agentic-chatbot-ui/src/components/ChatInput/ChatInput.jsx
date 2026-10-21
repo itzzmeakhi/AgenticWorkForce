@@ -1,31 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 
+import { suggestionChips } from '../../utils/capabilities';
 import useRecorder from '../../utils/useRecorder';
 import { transcribeAudio } from '../../api/voiceApi';
 
 import './ChatInput.scss';
-
-const SUGGESTIONS = [
-  { text: "What's the status of order ORD1001?", domain: 'ecommerce' },
-  { text: 'Track my order ORD1002', domain: 'ecommerce' },
-  { text: 'Cancel order ORD1004', domain: 'ecommerce' },
-  { text: 'Show me gaming laptops under 150000', domain: 'ecommerce' },
-  { text: 'Join the waitlist for SKU-CS-501, email me@example.com', domain: 'ecommerce' },
-  { text: 'How long does a refund take?', domain: 'ecommerce' },
-  { text: 'Check policy POL2001', domain: 'insurance' },
-  { text: 'File a claim on POL2002 for accidental damage, amount 5000', domain: 'insurance' },
-  { text: "What's your insurance claims process?", domain: 'insurance' },
-];
-
-const orderedSuggestions = (accountType) => {
-  if (!accountType || accountType === 'both') {
-    return SUGGESTIONS.map((s) => s.text);
-  }
-  const matching = SUGGESTIONS.filter((s) => s.domain === accountType);
-  const rest = SUGGESTIONS.filter((s) => s.domain !== accountType);
-  return [...matching, ...rest].map((s) => s.text);
-};
 
 const ChatInput = ({ onSend, disabled, accountType, voiceEnabled, speakReplies, onToggleSpeak }) => {
   const [value, setValue] = useState('');
@@ -50,7 +30,7 @@ const ChatInput = ({ onSend, disabled, accountType, voiceEnabled, speakReplies, 
   );
   const recording = micState === 'recording';
   const micAvailable = voiceEnabled && micState !== 'unsupported';
-  const suggestions = useMemo(() => orderedSuggestions(accountType), [accountType]);
+  const suggestions = useMemo(() => suggestionChips(accountType), [accountType]);
 
   const submit = (e) => {
     e?.preventDefault();
