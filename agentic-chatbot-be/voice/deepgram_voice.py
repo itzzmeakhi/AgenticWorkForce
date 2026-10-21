@@ -55,6 +55,28 @@ def is_configured() -> bool:
     return _api_key() is not None
 
 
+# IDs such as CLM3003, POL2003, ORD1001, REF5001, TRK7841002298 and SKU-LT-201 are read
+# aloud by the speech engine as one odd word that drops the digits. Spell them out instead:
+# "CLM3003" -> "C L M, 3 0 0 3" (letters spaced, digits spaced in groups of four).
+_ID_PREFIXES = "ORD|POL|CLM|REF|TRK|CUST"
+_ID = re.compile(rf"\b({_ID_PREFIXES})[-\s]?(\d{{3,}})\b", re.I)
+_SKU = re.compile(r"\bSKU-([A-Z]{2})-(\d{2,})\b", re.I)
+
+
+def _spell(chars: str) -> str:
+    return " ".join(chars.upper())
+
+
+def _digits(number: str) -> str:
+    groups = [number[i:i + 4] for i in range(0, len(number), 4)]
+    return ", ".join(" ".join(g) for g in groups)
+
+
+def spell_out_ids(text: str) -> str:
+    text = _SKU.sub(lambda m: f"{_spell('SKU')}, {_spell(m.group(1))}, {_digits(m.group(2))}", text)
+    return _ID.sub(lambda m: f"{_spell(m.group(1))}, {_digits(m.group(2))}", text)
+
+
 def clean_text_for_speech(text: str) -> str:
     """Strip markdown/formatting so the TTS does not read symbols aloud."""
     t = re.sub(r"```.*?```", " ", text, flags=re.S)
@@ -65,7 +87,7 @@ def clean_text_for_speech(text: str) -> str:
     t = re.sub(r"[*_~>|]+", "", t)                            # emphasis etc.
     t = re.sub(r"\s*\n+\s*", ". ", t)
     t = re.sub(r"\.\s*\.", ".", t)
-    return re.sub(r"\s+", " ", t).strip()
+    return re.sub(r"\s+", " ", spell_out_ids(t)).strip()
 
 
 def shorten_for_voice(text: str, limit: int = MAX_SPOKEN_CHARS) -> str:

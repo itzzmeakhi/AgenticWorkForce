@@ -23,7 +23,7 @@ class TestTextPrep:
     def test_strips_markdown(self):
         out = dv.clean_text_for_speech("## Status\n- **Order** ORD1001 is `shipped`\n[track](http://x.y)")
         assert "#" not in out and "*" not in out and "`" not in out and "http" not in out
-        assert "ORD1001" in out and "shipped" in out and "track" in out
+        assert "O R D, 1 0 0 1" in out and "shipped" in out and "track" in out
 
     def test_short_text_unchanged(self):
         assert dv.shorten_for_voice("Your order has shipped.") == "Your order has shipped."
@@ -100,3 +100,41 @@ class TestEndpoints:
         dv.voice_service._cache.clear()
         client.post("/voice/speak", json={"text": "hi there", "voice": "nope"})
         assert seen["params"]["model"] == dv.DEFAULT_VOICE
+
+
+class TestIdsAreSpelledOutForSpeech:
+    @pytest.mark.parametrize("text,spoken", [
+        ("Claim ID: CLM3003", "Claim ID: C L M, 3 0 0 3"),
+        ("Policy: POL2003", "Policy: P O L, 2 0 0 3"),
+        ("Order ORD1001 has shipped", "Order O R D, 1 0 0 1 has shipped"),
+        ("Refund REF5001 is processing", "Refund R E F, 5 0 0 1 is processing"),
+        ("tracking TRK7841002298", "tracking T R K, 7 8 4 1, 0 0 2 2, 9 8"),
+        ("SKU-LT-201", "S K U, L T, 2 0 1"),
+        ("order ord1001", "order O R D, 1 0 0 1"),
+    ])
+    def test_ids_are_spelled_letter_by_letter_and_digit_by_digit(self, text, spoken):
+        assert dv.clean_text_for_speech(text) == spoken
+
+    def test_every_digit_survives(self):
+        out = dv.clean_text_for_speech("Claim CLM3003 on policy POL2003")
+        assert out.replace(" ", "").replace(",", "").count("3003") == 1 and "2003" in out.replace(" ", "")
+
+    def test_ordinary_words_and_numbers_are_untouched(self):
+        text = "Your order total is INR 42999 and the policy covers 3 members in 2026."
+        assert dv.clean_text_for_speech(text) == text
+
+    def test_ids_inside_markdown_are_spelled_too(self):
+        out = dv.clean_text_for_speech("- **CLM3003** on `POL2003`\n- ORD1001")
+        assert "C L M, 3 0 0 3" in out and "P O L, 2 0 0 3" in out and "O R D, 1 0 0 1" in out
+
+    def test_speak_endpoint_sends_the_spelled_out_text_to_deepgram(self, key, monkeypatch):
+        sent = {}
+
+        def fake_post(url, **kw):
+            sent.update(kw)
+            return httpx.Response(200, request=httpx.Request("POST", url), content=b"RIFF" + b"\0" * 200)
+
+        monkeypatch.setattr(dv.httpx, "post", fake_post)
+        dv.voice_service._cache.clear()
+        client.post("/voice/speak", json={"text": "Your claim CLM3003 is under review."})
+        assert sent["json"]["text"] == "Your claim C L M, 3 0 0 3 is under review."
