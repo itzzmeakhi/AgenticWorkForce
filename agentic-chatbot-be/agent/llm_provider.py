@@ -164,7 +164,7 @@ def _extract_amount(text: str) -> float:
     keyworded = re.search(r"(?:amount|inr|rs\.?|rupees)\D{0,5}(\d+(?:\.\d+)?)", text, re.IGNORECASE)
     if keyworded:
         return float(keyworded.group(1))
-    for match in re.finditer(r"(?<![a-zA-Z])(\d{3,})(?!\w)", text):
+    for match in re.finditer(r"(?<![a-zA-Z\d])(\d{3,})(?!\w)", text):
         return float(match.group(1))
     return 0.0
 

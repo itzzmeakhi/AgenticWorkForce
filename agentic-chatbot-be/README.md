@@ -1,236 +1,294 @@
-# Agentic Chatbot Backend -- Mid-sem Build (~60%)
+# Agentic Chatbot Backend
 
 Backend for *An Agentic AI-Based Enterprise Digital Workforce for Intelligent
-Customer Support in Modern Contact Centers* (M.Tech dissertation, BITS
-Pilani WILP, SEZG628T). This is a **pure API service** -- it serves no
-frontend of any kind. The chatbot-ui repo is a fully independent project
-that consumes this backend over HTTP only.
+Customer Support in Modern Contact Centers* (M.Tech dissertation, BITS Pilani
+WILP).
 
-This repo is the mid-semester milestone: e-commerce support is functional
-end to end for both domains: e-commerce (orders, tracking, cancellation,
-products) and insurance (policies, claims, filing a claim), each with its own
-dummy data, sign-in and knowledge documents.
+It is an API only. It has no web pages of its own. The `agentic-chatbot-ui`
+project talks to it over HTTP.
 
 ---
 
-## 1. Two processes, one system
+## 1. What it can do
+
+**E-commerce customers (signed in) can:**
+
+- see their orders and check an order's status
+- track a package
+- cancel an order (the bot asks "are you sure?" first)
+
+**Insurance customers (signed in) can:**
+
+- see their policies and the details of one policy
+- see their claims and check a claim's status
+- file a new claim (the bot asks "are you sure?" first)
+
+**Anyone, even without signing in, can:**
+
+- search products and see product details
+- ask general questions (refunds, shipping, claims process, coverage, premiums).
+  Answers come from our own knowledge documents (RAG).
+- ask things that are not in our documents, such as "what is a deductible?" or
+  today's news. The bot can search the web (Tavily) for this. It never uses the
+  web for account data.
+
+**Other features:**
+
+- **Two separate sign-ins.** E-commerce and insurance each have their own
+  customers and their own dummy data.
+- **Domain switching.** The bot works out whether you are asking about
+  shopping or insurance and uses the right tools.
+- **Personal greetings.** Say "hi" after signing in and it replies with your
+  first name, instantly.
+- **Streaming replies.** Text appears as it is written (`/chat/stream`).
+- **Voice.** Speech-to-text and text-to-speech through Deepgram. Order, policy
+  and claim IDs are spelled out so they are spoken clearly.
+- **Choice of AI model.** Gemini, OpenAI, Anthropic, or a built-in mock model
+  that needs no key.
+
+---
+
+## 2. How the pieces fit
 
 ```
-+-------------------------+        HTTP         +----------------------------+
-|   api.main:app  (:8000) | -------------------> | fulfillment_api.server:app |
-|   the LangGraph agent   |  agent/fulfillment_   |   (:8010)                  |
-|                          |  client.py            |  orders / products /       |
-|  + offline knowledge     |                      |  insurance policies/claims |
-|    search                |                      |  (in-memory mock data)      |
-+-------------------------+                       +----------------------------+
+ Browser / UI
+      |
+      v
++-------------------+   HTTP    +-------------------------+
+| Agent API  :8000  | --------> | Fulfillment API  :8010  |
+| (LangGraph agent) |           | orders, products,       |
+| + knowledge base  |           | policies, claims,       |
+| + web search      |           | sign-in (mock data)     |
+| + voice           |           +-------------------------+
++-------------------+
 ```
 
-The agent process never imports the fulfillment layer's code directly --
-it always calls out over HTTP (`FULFILLMENT_API_URL`, default
-`http://localhost:8010`). If that service is down, tools degrade
-gracefully (a clear message, not a crash).
+- **Agent API** (`api/main.py`, port 8000) is what the UI calls. It runs the
+  AI agent.
+- **Fulfillment API** (`fulfillment_api/server.py`, port 8010) is a stand-in
+  for a company's real order and insurance systems. It holds the dummy data and
+  checks who is signed in.
 
-## 2. Domain-fluid routing
+The agent never reads the dummy data directly. It always calls the Fulfillment
+API (`FULFILLMENT_API_URL`, default `http://localhost:8010`). If that service is
+down, the bot says so politely instead of crashing.
 
-`agent/domain_router.py`'s `classify_domain()` correctly tells an
-e-commerce question from an insurance question and routes accordingly:
+---
 
-- **`domain == "ecommerce"`** -> the real order/product tools
-  (`agent/fulfillment_client.py`'s `CUSTOMER_FACING_TOOLS` +
-  `PRODUCT_TOOLS`) get bound, and the agent answers with real (mock)
-  data.
-- **`domain == "insurance"`** -> the real insurance tools
-  (`INSURANCE_TOOLS`: `get_my_policies`, `get_policy_details`,
-  `get_my_claims`, `get_claim_status`, `file_claim`) plus the knowledge base
-  get bound, and the agent answers from the customer's own policy and claim
-  data (mock, scoped to the signed-in customer).
+## 3. What happens when you send a message
 
-See `agent/contact_center_agent.py`'s `_domain_tools()`.
+1. `api/main.py` finds your chat session (or makes a new one).
+2. If the message is just a greeting, the agent replies at once with your name.
+3. Otherwise a LangGraph flow runs:
+   **pick the topic** (e-commerce, insurance or general) -> **agent** (the AI
+   decides what to do) -> **tools** (look up data, search documents, search the
+   web) -> back to the **agent**, which writes the final reply.
+4. The reply goes back to the UI, along with which tools were used.
 
-## 3. Request flow, step by step
+Main files:
 
-1. **`api/main.py`** looks up (or creates) a `CallCenterAgent` for the
-   given `session_id`.
-2. **`agent/contact_center_agent.py`**'s `.chat()` appends the new message
-   to conversation history and invokes the compiled LangGraph app.
-3. **`classify_domain` node** decides `ecommerce` / `insurance` / `general`
-   for this turn (falling back to the previous turn's domain for
-   ambiguous follow-ups).
-4. **`agent` node**: `_domain_tools()` picks the tool list, the system
-   prompt (`agent/system_prompt_config.py`) is built for the domain and the
-   signed-in customer, and the LLM
-   (`agent/llm_provider.py`'s `get_llm()` -- Gemini/OpenAI/Anthropic, or
-   the zero-key `MockChatModel`) is invoked with tools bound.
-5. **`should_continue`**: tool calls -> `tools` node; otherwise -> `END`.
-6. **`tools` node**: each tool call is dispatched from the pre-built
-   `self.available_tools` dict. Fulfillment (order and insurance) tools call out
-   over HTTP to `fulfillment_api.server`; knowledge tools call
-   `get_backend().retrieve()` against the offline Chroma index. Results
-   become `ToolMessage`s tagged with their `tool_call_id`.
-7. Back to **`agent` node** -- the LLM produces a final reply from the
-   tool results.
-8. `.chat()` pairs each `ToolMessage` back to its tool call **by
-   `tool_call_id`** (not list position) and returns
-   `{reply, domain, tool_calls}`.
+| File | Job |
+|---|---|
+| `agent/contact_center_agent.py` | The agent and its LangGraph flow |
+| `agent/domain_router.py` | Decides e-commerce, insurance or general |
+| `agent/system_prompt_config.py` | The bot's instructions and rules |
+| `agent/llm_provider.py` | Chooses the AI model (or the mock) |
+| `agent/fulfillment_client.py` | Tools that call the Fulfillment API |
+| `agent/knowledge_tools.py`, `knowledge_search.py` | Search our documents |
+| `agent/web_search_tool.py` | Web search with Tavily |
 
-## 4. Fulfillment API
+---
 
-`fulfillment_api/operations.py` holds the e-commerce business logic
-(`get_order_status`, `get_my_orders`, `track_package`, `cancel_order`,
-`search_products`, `get_product_details`) and the insurance logic
-(`get_my_policies`, `get_policy_details`, `get_my_claims`,
-`get_claim_status`, `file_claim`). `fulfillment_api/server.py` is a
-REST/FastAPI server exposing all of these (orders under `/orders`, insurance
-under `/insurance/...`, sign-in at `/auth/login`).
+## 4. Signing in and staying safe
 
-Mock data (`fulfillment_api/mock_data.py`) is two separate datasets:
-e-commerce (5 products, orders `ORD1001`-`ORD1006`) and insurance (5 policies
-`POL2001`-`POL2005` of type Health/Motor/Home, 3 claims `CLM3001`-`CLM3003`
-in submitted/under-review/approved/rejected states). Both are rebuilt fresh
-before every test (`tests/conftest.py`'s `reset_mock_data` fixture) by
-`initialize_mock_data()` and `initialize_insurance_data()`. `Policy` and
-`Claim` are defined in `fulfillment_api/models.py`.
+- You sign in with `POST /auth/login` (`domain`, `email`, `password`). The
+  domain decides which customer list is checked.
+- You get a signed token (JWT). It lasts `JWT_TTL_MINUTES` (default 240).
+- The agent passes your token to the Fulfillment API on every tool call. The
+  AI model never chooses an email or customer ID itself.
+- You only ever see your own orders, policies and claims. Someone else's record
+  looks like "not found". A token from one domain is refused (403) on the other.
+- Each chat session belongs to the person who started it. Another person using
+  the same session id gets a new session.
+- Cancelling an order and filing a claim need a clear "yes" in your very next
+  message. This is checked in code, not just in the bot's instructions.
+- 5 wrong passwords lock that account for 60 seconds.
+- Passwords are stored hashed.
 
-`ShippingAddress` (in `fulfillment_api/models.py`) requires `address`,
-`city`, `state`, `postal_code`, and `phone`. `Order` carries `carrier` and
-`current_location` (both optional) -- `track_package()` in
-`operations.py` reads these, so if you add or rename fields on either
-model, update every `ShippingAddress(...)`/`Order(...)` call in
-`mock_data.py` to match, or the server will fail at import time with a
-Pydantic validation error.
+**Demo accounts** (password for all: `demo1234`)
 
-## 5. Knowledge retrieval -- offline ChromaDB only
-
-`agent/knowledge_search.py`'s `ChromaBackend` is the only backend in this
-build: a local, persistent ChromaDB collection using
-`agent/offline_embeddings.py`'s `HashedBagOfWordsEmbedding` (dependency-free,
-no model download, no API key). `ingestion/local_index.py`'s
-`build_local_index()` chunks `data/knowledge_base/*.md` by `## ` headers
-and indexes them; reachable live via `POST /admin/reindex`.
-
-`agent/knowledge_tools.py` wraps this with `search_faq_articles` and
-`search_comprehensive_knowledge`.
-
-## 6. LLM provider
-
-| `LLM_PROVIDER` | Requires | Model |
+| Domain | Email | Name |
 |---|---|---|
-| `gemini` | `GOOGLE_API_KEY` | `GEMINI_MODEL` (default `gemini-3.6-flash`) |
-| `openai` | `OPENAI_API_KEY` | `OPENAI_MODEL` (default `gpt-4o-mini`) |
-| `anthropic` | `ANTHROPIC_API_KEY` | `ANTHROPIC_MODEL` (default `claude-sonnet-4-5`) |
-| `mock` (default) | nothing | `MockChatModel` -- deterministic keyword-based tool selection |
+| E-commerce | `abc@gmail.com` | Priya Nair |
+| E-commerce | `rahul@gmail.com` | Rahul Verma |
+| E-commerce | `akhil@gmail.com` | Akhil Reddy |
+| Insurance | `neha@gmail.com` | Neha Kapoor |
+| Insurance | `vikram@gmail.com` | Vikram Singh |
+| Insurance | `akhil@gmail.com` | Akhil Reddy |
 
-## 7. Directory layout
+The e-commerce and insurance `akhil@gmail.com` accounts are separate.
+
+---
+
+## 5. Dummy data
+
+- **E-commerce:** 5 products and orders `ORD1001` to `ORD1006`.
+- **Insurance:** policies `POL2001` to `POL2005` (health, motor, home) and
+  claims `CLM3001` to `CLM3003`. New claims start at `CLM3004`.
+- The data lives in memory. It resets whenever the Fulfillment API restarts.
+- "Today" in the dummy data is fixed at 2026-09-13.
+
+---
+
+## 6. Knowledge documents (RAG)
+
+Six short guides live in `data/knowledge_base/`:
+
+- `ecommerce_refund_policy.md`, `ecommerce_shipping_policy.md`
+- `insurance_claims_process.md`, `insurance_coverage_and_exclusions.md`,
+  `insurance_premiums_and_renewals.md`
+- `general_contact_center_faq.md`
+
+They are split by `##` headings, stored in a local ChromaDB, and searched when
+a question needs them. A file name starting with `ecommerce_` or `insurance_`
+tells the bot which domain it belongs to. No API key or model download is
+needed for this. After editing a guide, call `POST /admin/reindex`.
+
+---
+
+## 7. Voice
+
+Voice needs `DEEPGRAM_API_KEY`. Without it, voice is switched off and the rest
+of the app still works.
+
+- `GET /voice/status` tells the UI whether voice is available.
+- `POST /voice/transcribe` turns recorded speech into text (Deepgram Nova-3).
+- `POST /voice/speak` turns a reply into audio (Deepgram Aura voices). Replies
+  are cleaned of symbols and shortened for speaking, and repeated audio is
+  cached.
+
+---
+
+## 8. AI model choice
+
+Set `LLM_PROVIDER` in `.env`.
+
+| `LLM_PROVIDER` | Needs | Model setting |
+|---|---|---|
+| `gemini` | `GOOGLE_API_KEY` | `GEMINI_MODEL` |
+| `openai` | `OPENAI_API_KEY` | `OPENAI_MODEL` |
+| `anthropic` | `ANTHROPIC_API_KEY` | `ANTHROPIC_MODEL` |
+| `mock` (default) | nothing | A simple keyword-based model for demos and tests |
+
+---
+
+## 9. API list
+
+**Agent API (:8000)**
+
+| Route | Purpose |
+|---|---|
+| `GET /health` | Is it running? |
+| `POST /auth/login` | Sign in (passes through to the Fulfillment API) |
+| `GET /auth/me` | Who am I? |
+| `POST /chat` | Send a message, get the full reply |
+| `POST /chat/stream` | Send a message, get the reply as it is written |
+| `POST /admin/reindex` | Rebuild the knowledge index |
+| `GET /voice/status`, `POST /voice/transcribe`, `POST /voice/speak` | Voice |
+
+**Fulfillment API (:8010)**
+
+| Route | Purpose |
+|---|---|
+| `POST /auth/login`, `GET /health` | Sign in, health check |
+| `GET /orders`, `/orders/{id}`, `/orders/{id}/track`, `POST /orders/{id}/cancel` | Orders (sign-in needed) |
+| `GET /products`, `/products/{sku}` | Products (open to everyone) |
+| `GET /insurance/policies`, `/insurance/policies/{id}` | Policies (sign-in needed) |
+| `GET /insurance/claims`, `/insurance/claims/{id}`, `POST /insurance/claims` | Claims (sign-in needed) |
+
+---
+
+## 10. Folder layout
 
 ```
 agentic-chatbot-be/
-|-- agent/
-|   |-- contact_center_agent.py   # CallCenterAgent, the LangGraph graph
-|   |-- domain_router.py          # classify_domain()
-|   |-- state.py                  # AgentState TypedDict
-|   |-- system_prompt_config.py   # get_system_prompt(domain, fulfillment_available, identity)
-|   |-- llm_provider.py           # get_llm(), MockChatModel
-|   |-- fulfillment_client.py     # HTTP client + @tool wrappers -> :8010
-|   |-- knowledge_search.py       # ChromaBackend (offline only)
-|   |-- knowledge_tools.py        # @tool search_faq_articles / search_comprehensive_knowledge
-|   `-- offline_embeddings.py     # HashedBagOfWordsEmbedding
-|-- fulfillment_api/
-|   |-- models.py                 # Order, Product, Policy, Claim
-|   |-- mock_data.py              # in-memory dataset
-|   |-- operations.py             # e-commerce + insurance operations (ownership-scoped)
-|   `-- server.py                 # REST/FastAPI transport (:8010)
-|-- ingestion/
-|   `-- local_index.py            # offline Chroma indexing
-|-- api/
-|   |-- main.py                   # FastAPI app (:8000), no frontend serving
-|   `-- schemas.py                # request/response Pydantic models
-|-- data/
-|   `-- knowledge_base/*.md       # e-commerce + general FAQ docs
-|-- tests/                        # see section 9
-|-- config.py                     # paths, env constants
-|-- requirements.txt
-|-- .env.example
-`-- pytest.ini
+|-- agent/              # the agent, tools, prompts, model choice
+|-- api/                # Agent API (main.py) and its request/response models
+|-- fulfillment_api/    # mock company systems, customers and dummy data
+|-- security/           # password hashing and tokens
+|-- voice/              # Deepgram speech-to-text and text-to-speech
+|-- ingestion/          # builds the knowledge index
+|-- data/knowledge_base/  # the six guides
+|-- tests/              # automatic tests
+|-- config.py, requirements.txt, .env.example, run_all.sh
 ```
 
-## 8. Running it
+---
+
+## 11. Running it
 
 ```bash
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # optional -- everything below works with LLM_PROVIDER=mock
+cp .env.example .env     # then fill in what you need (see below)
 
-# Terminal 1
+./run_all.sh             # starts both services, Ctrl+C stops both
+```
+
+Or start them yourself in two terminals:
+
+```bash
 uvicorn fulfillment_api.server:app --port 8010
-
-# Terminal 2
 uvicorn api.main:app --reload --port 8000
 ```
 
+**Settings in `.env`** (all optional unless noted)
+
+| Name | What it is for |
+|---|---|
+| `LLM_PROVIDER` | `mock`, `gemini`, `openai` or `anthropic` |
+| `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | Key for the model you picked |
+| `JWT_SECRET` | Secret used to sign tokens. Set your own value. Both services must use the same one. |
+| `JWT_TTL_MINUTES` | How long a sign-in lasts (default 240) |
+| `DEEPGRAM_API_KEY` | Turns on voice |
+| `TAVILY_API_KEY` | Turns on web search |
+| `FULFILLMENT_API_URL` | Where the Fulfillment API is (default `http://localhost:8010`) |
+
+Quick try:
+
 ```bash
 curl localhost:8000/health
+
+# sign in, then ask about your orders
+TOKEN=$(curl -s -X POST localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"domain":"ecommerce","email":"rahul@gmail.com","password":"demo1234"}' \
+  | python -c 'import sys,json; print(json.load(sys.stdin)["token"])')
+
 curl -X POST localhost:8000/chat -H 'Content-Type: application/json' \
-     -d '{"message": "track order ORD1002"}'
-curl -X POST localhost:8000/chat -H 'Content-Type: application/json' \
-     -d '{"message": "whats my policy status"}'
+  -H "Authorization: Bearer $TOKEN" -d '{"message": "show my orders"}'
 ```
 
-## 9. Tests
+---
+
+## 12. Tests
 
 ```bash
-python -m pytest tests/ -v
+python -m pytest tests -q
 ```
 
-All tests are offline (mock LLM, offline Chroma, in-process FastAPI
-`TestClient` for the fulfillment API -- no real network, no real API
-keys):
+The tests are all offline: they use the mock model, a local index, and an
+in-process copy of the Fulfillment API. No keys or internet are needed. They
+cover the business logic, the REST routes, topic routing, document search,
+the full agent flow, sign-in and access rules, confirmations, streaming, voice
+and web search.
 
-- **`test_fulfillment_operations.py`** -- every e-commerce business-logic
-  function and the insurance policy/claim operations (including filing a claim).
-- **`test_fulfillment_api_server.py`** -- the REST routes via FastAPI's
-  in-process `TestClient`.
-- **`test_domain_router.py`** -- `classify_domain()`'s keyword scoring and
-  fallback-to-previous-domain behavior.
-- **`test_knowledge_search.py`** -- offline Chroma indexing and retrieval.
-- **`test_agent_pipeline.py`** -- full `CallCenterAgent.chat()` runs:
-  order lookup/tracking/cancellation, mid-conversation domain switching,
-  RAG-grounded answers, graceful degradation with no fulfillment API, and
-  insurance policy/claim lookups and filing a claim through the agent.
+---
 
-## 10. What's WIP
+## 13. Known limits
 
-- Pinecone production vector store (this build is offline-Chroma-only).
-- FastMCP transport for the Fulfillment API (this build is REST-only).
-- LangSmith tracing configuration.
-
-## 11. Authentication and access control
-
-Sign-in is per domain. The Fulfillment API keeps a **separate customer store
-for e-commerce and for insurance** (`fulfillment_api/customers.py`), with
-separate dummy data (orders vs. policies/claims). The login screen's account
-type decides which store the credentials are checked against.
-
-- `POST /auth/login {domain, email, password}` (on the Agent API, proxied to the
-  Fulfillment API) returns a signed JWT (HS256, `JWT_TTL_MINUTES`, default 4h).
-  The token carries the customer id, email and **domain**.
-- Both services verify the token with the same `JWT_SECRET` (set it in `.env`;
-  a dev-only default is used with a warning otherwise).
-- The agent forwards the signed-in customer's token on every tool call. Tools
-  take no email/customer id from the model; the Fulfillment API reads the
-  identity from the token, returns only that customer's records, answers
-  "not found" for records that belong to someone else, and returns 403 when a
-  token for one domain is used on the other domain's endpoints.
-- Chat sessions are bound to their owner; a different (or anonymous) caller
-  presenting someone else's session id gets a fresh session.
-- Products, the knowledge base and general questions need no sign-in.
-- 5 failed sign-ins on an account lock it for 60 seconds.
-
-Dummy accounts (all use password `demo1234`): e-commerce `abc@gmail.com`,
-`rahul@gmail.com`, `akhil@gmail.com`; insurance `neha@gmail.com`,
-`vikram@gmail.com`, `akhil@gmail.com` (a separate account from the e-commerce
-one). Tests: `tests/test_auth_access_control.py`.
-
-## 12. Security note
-
-Do not commit a real `.env` with live API keys. `.env.example` ships with
-every value empty -- copy it to `.env` and fill in only what you need.
+- The voice routes do not need a sign-in, so anyone who can reach the server
+  can use your Deepgram credit.
+- CORS allows every origin. Restrict it before any real deployment.
+- Chat sessions stay in memory until the server restarts.
+- Dummy data resets on restart.
+- Do not commit a real `.env`. `.env.example` has every value empty.

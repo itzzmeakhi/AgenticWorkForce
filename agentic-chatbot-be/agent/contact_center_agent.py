@@ -35,7 +35,7 @@ def _domain_tools(domain: str, fulfillment_available: bool):
 
 
 # --------------------------------------------------------------------------- cancel confirmation
-# cancel_order is destructive, so the agent never runs it on the first request.
+# cancel_order and file_claim change records, so the agent never runs them on the first request.
 # The first call is intercepted and answered with a confirmation prompt; the
 # cancellation only runs if the customer's very next message is a clear "yes".
 # This is enforced here in code, so it does not depend on the LLM following the prompt.
@@ -74,6 +74,8 @@ class CallCenterAgent:
         # Set when cancel_order has been intercepted and the customer was asked
         # to confirm: {"order_id": ..., "turn": <turn the question was asked>}.
         self.pending_cancellation: Optional[Dict[str, Any]] = None
+        # Same idea for file_claim: {"policy_id", "amount", "turn"} while a claim awaits confirmation.
+        self.pending_claim: Optional[Dict[str, Any]] = None
         # Who this agent is talking to. None = anonymous (general questions, product
         # search and the knowledge base only). The token is forwarded to the
         # Fulfillment API on every customer-data tool call; see set_auth().
@@ -106,28 +108,33 @@ class CallCenterAgent:
             self.conversation_history = []
             self.domain = "general"
             self.pending_cancellation = None
+            self.pending_claim = None
         self.identity = identity
         self.token = token if identity else None
+
+    @staticmethod
+    def _last_human_text(state: AgentState) -> str:
+        for m in reversed(state["messages"]):
+            if getattr(m, "type", None) == "human":
+                return str(m.content)
+        return ""
+
+    def _confirmed_now(self, pending: Optional[Dict[str, Any]], state: AgentState) -> bool:
+        """True when a confirmation was asked on the previous turn and the customer's
+        latest message is a clear yes."""
+        return (
+            pending is not None
+            and pending["turn"] == self.turn_count - 1  # asked on the previous turn, so this is the reply
+            and _is_affirmative(self._last_human_text(state))
+        )
 
     def _gate_cancel_order(self, args: Dict[str, Any], state: AgentState) -> Optional[str]:
         """Confirmation gate for cancel_order. Returns None when the cancellation
         may run, or the text to hand back to the model instead of running it."""
         order_id = str(args.get("order_id", "")).strip().upper()
 
-        last_human = ""
-        for m in reversed(state["messages"]):
-            if getattr(m, "type", None) == "human":
-                last_human = str(m.content)
-                break
-
         pending = self.pending_cancellation
-        confirmed = (
-            pending is not None
-            and pending["order_id"] == order_id
-            and pending["turn"] == self.turn_count - 1  # asked on the previous turn, so this is the reply
-            and _is_affirmative(last_human)
-        )
-        if confirmed:
+        if pending is not None and pending["order_id"] == order_id and self._confirmed_now(pending, state):
             self.pending_cancellation = None
             return None
 
@@ -136,6 +143,34 @@ class CallCenterAgent:
             f"Confirmation needed before cancelling order {order_id} -- nothing has been "
             f"cancelled yet. Ask the customer to reply 'yes' to confirm; a cancellation "
             f"cannot be undone. Only call cancel_order again after they confirm in their next message."
+        )
+
+    def _gate_file_claim(self, args: Dict[str, Any], state: AgentState) -> Optional[str]:
+        """Confirmation gate for file_claim, same rules as cancel_order: the claim is only
+        filed if the customer's very next message is a clear yes for the same policy and
+        amount. A request the tool would reject anyway (no policy, no amount) passes straight
+        through, since the tool then just explains what is missing and changes nothing."""
+        policy_id = str(args.get("policy_id", "")).strip().upper()
+        try:
+            amount = float(args.get("amount") or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        if not policy_id or amount <= 0:
+            return None
+
+        pending = self.pending_claim
+        if pending is not None and pending["policy_id"] == policy_id and pending["amount"] == amount \
+                and self._confirmed_now(pending, state):
+            self.pending_claim = None
+            return None
+
+        self.pending_claim = {"policy_id": policy_id, "amount": amount, "turn": self.turn_count}
+        return (
+            f"Confirmation needed before filing this claim -- nothing has been filed yet. "
+            f"Policy {policy_id}, type '{args.get('claim_type') or 'General'}', amount INR {amount:g}, "
+            f"description '{args.get('description') or ''}'. Read these details back to the customer and ask "
+            f"them to reply 'yes' to confirm. Only call file_claim again, with the same policy and amount, "
+            f"after they confirm in their next message."
         )
 
     def _create_graph(self) -> StateGraph:
@@ -173,8 +208,9 @@ class CallCenterAgent:
                     tool_fn = self.available_tools.get(name)
                     if tool_fn is None:
                         result = f"Error: unknown tool '{name}'."
-                    elif name == "cancel_order":
-                        held = self._gate_cancel_order(tool_call["args"], state)
+                    elif name in ("cancel_order", "file_claim"):
+                        gate = self._gate_cancel_order if name == "cancel_order" else self._gate_file_claim
+                        held = gate(tool_call["args"], state)
                         if held is not None:
                             result = held
                         else:
@@ -303,3 +339,4 @@ class CallCenterAgent:
         self.conversation_history = []
         self.domain = "general"
         self.pending_cancellation = None
+        self.pending_claim = None

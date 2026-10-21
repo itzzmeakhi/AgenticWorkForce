@@ -499,13 +499,16 @@ class TestInsuranceDomainIsReal:
 
     def test_file_a_claim_through_the_agent(self, make_agent):
         agent = make_agent("akhil@gmail.com", domain="insurance")
-        result = agent.chat("File a claim on POL2003 for accidental damage, amount 5000")
-        assert [tc["tool"] for tc in result["tool_calls"]] == ["file_claim"]
-        assert "has been filed" in result["reply"].lower()
+        first = agent.chat("File a claim on POL2003 for accidental damage, amount 5000")
+        assert [tc["tool"] for tc in first["tool_calls"]] == ["file_claim"]
+        assert "confirmation needed" in first["reply"].lower() and "CLM3004" not in mock_data.CLAIMS
+        second = agent.chat("Yes, file the claim on POL2003, amount 5000")
+        assert "has been filed" in second["reply"].lower()
 
     def test_claim_filed_through_the_agent_is_visible_only_to_its_owner(self, make_agent):
         akhil = make_agent("akhil@gmail.com", domain="insurance")
         akhil.chat("File a claim on POL2003 for accidental damage, amount 5000")
+        akhil.chat("Yes, file the claim on POL2003, amount 5000")
         assert "CLM3004" in akhil.chat("Show me my claims")["reply"]
         assert "CLM3004" not in make_agent("neha@gmail.com", domain="insurance").chat("Show me my claims")["reply"]
 
@@ -513,3 +516,83 @@ class TestInsuranceDomainIsReal:
         result = make_agent("neha@gmail.com", domain="insurance").chat("What is the premium grace period?")
         assert any(tc["tool"] == "search_comprehensive_knowledge" for tc in result["tool_calls"])
         assert "insurance_premiums_and_renewals.md" in result["reply"]
+
+
+# =========================================================================== filing a claim needs a confirmation turn
+class TestFileClaimConfirmation:
+    ASK = "File a claim on POL2003 for accidental damage, amount 5000"
+    YES = "Yes, file the claim on POL2003, amount 5000"
+
+    @staticmethod
+    def claim_ids():
+        return set(mock_data.CLAIMS)
+
+    def test_first_request_never_files(self, make_agent):
+        agent = make_agent("akhil@gmail.com", domain="insurance")
+        before = self.claim_ids()
+        result = agent.chat(self.ASK)
+        assert self.claim_ids() == before
+        assert "confirmation needed" in result["reply"].lower() and "5000" in result["reply"] and "POL2003" in result["reply"]
+        assert agent.pending_claim["policy_id"] == "POL2003" and agent.pending_claim["amount"] == 5000
+
+    def test_a_clear_yes_on_the_next_turn_files_it(self, make_agent):
+        agent = make_agent("akhil@gmail.com", domain="insurance")
+        agent.chat(self.ASK)
+        result = agent.chat(self.YES)
+        assert "has been filed" in result["reply"].lower() and "CLM3004" in mock_data.CLAIMS
+        assert agent.pending_claim is None
+
+    def test_a_no_does_not_file(self, make_agent):
+        agent = make_agent("akhil@gmail.com", domain="insurance")
+        before = self.claim_ids()
+        agent.chat(self.ASK)
+        agent.chat("No, don't file the claim on POL2003, amount 5000")
+        assert self.claim_ids() == before
+
+    def test_confirmation_must_come_on_the_next_turn(self, make_agent):
+        agent = make_agent("akhil@gmail.com", domain="insurance")
+        before = self.claim_ids()
+        agent.chat(self.ASK)
+        agent.chat("What is the premium grace period?")      # an unrelated turn in between
+        agent.chat(self.YES)
+        assert self.claim_ids() == before                       # the old request expired, so it asks again
+
+    def test_a_changed_amount_needs_a_fresh_confirmation(self, make_agent):
+        agent = make_agent("akhil@gmail.com", domain="insurance")
+        before = self.claim_ids()
+        agent.chat(self.ASK)
+        result = agent.chat("Yes, file the claim on POL2003, amount 90000")
+        assert self.claim_ids() == before and "confirmation needed" in result["reply"].lower()
+
+    def test_a_different_policy_needs_a_fresh_confirmation(self, make_agent):
+        agent = make_agent("neha@gmail.com", domain="insurance")
+        before = self.claim_ids()
+        agent.chat("File a claim on POL2001 for hospitalisation, amount 5000")
+        agent.chat("Yes, file the claim on POL2005, amount 5000")
+        assert self.claim_ids() == before
+
+    def test_a_request_the_tool_would_reject_is_not_held(self, make_agent):
+        agent = make_agent("akhil@gmail.com", domain="insurance")
+        result = agent.chat("File a claim on POL2003 for accidental damage")     # no amount
+        assert "confirmation needed" not in result["reply"].lower() and agent.pending_claim is None
+
+    def test_the_gate_does_not_bypass_ownership(self, make_agent):
+        agent = make_agent("neha@gmail.com", domain="insurance")
+        before = self.claim_ids()
+        agent.chat("File a claim on POL2002 for fraud, amount 5000")            # vikram's policy
+        result = agent.chat("Yes, file the claim on POL2002, amount 5000")
+        assert self.claim_ids() == before and "no policy found" in result["reply"].lower()
+
+    def test_switching_customer_clears_a_pending_claim(self, make_agent, login):
+        from security.tokens import verify_token
+
+        agent = make_agent("akhil@gmail.com", domain="insurance")
+        agent.chat(self.ASK)
+        token = login("insurance", "neha@gmail.com")
+        agent.set_auth(verify_token(token), token)
+        assert agent.pending_claim is None
+
+    def test_cancel_and_claim_confirmations_do_not_interfere(self, make_agent):
+        agent = make_agent("akhil@gmail.com")                                     # e-commerce account
+        agent.chat("Cancel order ORD1003")
+        assert agent.pending_cancellation is not None and agent.pending_claim is None

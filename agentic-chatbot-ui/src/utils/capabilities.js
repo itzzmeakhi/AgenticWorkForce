@@ -19,7 +19,7 @@ const INSURANCE_ITEMS = [
   'See all my policies and premium due dates',
   'Look up the details of a policy',
   'See all my claims and check a claim\'s status',
-  'File a new claim on an active policy',
+  'File a new claim on an active policy (asks you to confirm first)',
 ]
 
 const KNOWLEDGE = {
